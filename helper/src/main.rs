@@ -1112,9 +1112,9 @@ fn open_options(app: &Rc<RefCell<App>>) {
     );
     if let (Some(dialog), Ok(mut a)) = (dialog, app.try_borrow_mut()) {
         a.options = Some(dialog);
-        // A fresh look at the latest release while the dialog is open (one small request).
+        // A fresh look at the latest release while the dialog is open, unless automatic checks are off.
         if let Some(tx) = &a.update {
-            let _ = tx.send(UpdateCmd::CheckNow);
+            let _ = tx.send(UpdateCmd::OptionsOpened);
         }
     }
 }
@@ -1149,7 +1149,9 @@ fn main() {
         toggle_running_instance();
         return;
     }
-    let settings = Settings::load(&paths::settings_file());
+    let mut settings = Settings::load(&paths::settings_file());
+    // The installer's "Start with Windows" task writes the same shortcut Options manages.
+    settings.autostart = options::autostart::is_enabled();
     log::info!("op36-helper starting; settings: {settings:?}");
 
     let overlay = OverlayWindow::create().expect("overlay window");

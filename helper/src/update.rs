@@ -107,6 +107,20 @@ pub fn pick_asset(release: &Release, channel: Channel) -> Option<&Asset> {
 }
 
 /// Why an asset must not be installed, if so.
+/// The version to offer, or nothing: newer than `current` *and* carrying an asset for this channel
+/// with a verifiable digest. A release that is published before its files are uploaded (as
+/// action-gh-release does) is not an update yet.
+pub fn available_update(release: &Release, channel: Channel, current: &str) -> Option<String> {
+    if !crate::version::is_newer(&release.version, current) {
+        return None;
+    }
+    let asset = pick_asset(release, channel)?;
+    if refuse_reason(asset).is_some() {
+        return None;
+    }
+    Some(release.version.clone())
+}
+
 pub fn refuse_reason(asset: &Asset) -> Option<&'static str> {
     match &asset.sha256 {
         Some(hex) if hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()) => None,
@@ -243,5 +257,92 @@ mod tests {
         assert!(s.contains("/VERYSILENT"));
         assert!(s.contains("Wait-Process"));
         assert!(s.contains("Move-Item"), "portable swap");
+    }
+}
+
+#[cfg(test)]
+mod availability_tests {
+    use super::*;
+
+    fn release(version: &str, assets: Vec<Asset>) -> Release {
+        Release {
+            version: version.into(),
+            assets,
+        }
+    }
+    fn asset(name: &str, sha256: Option<&str>) -> Asset {
+        Asset {
+            name: name.into(),
+            url: format!("https://x/{name}"),
+            sha256: sha256.map(str::to_string),
+        }
+    }
+    const GOOD: &str = "ab96664a40f9b71594f52cdfc9c7b6e77d3a41c9b216135563b533eb828b75d3";
+
+    #[test]
+    fn newer_release_without_an_asset_for_this_channel_is_not_available() {
+        // action-gh-release publishes the release before its files are uploaded; the check must stay
+        // quiet in that gap instead of raising a balloon that "Update now" then cannot honour.
+        assert_eq!(
+            available_update(&release("9.9.9", vec![]), Channel::Installed, "0.2.1"),
+            None
+        );
+        let portable_only = release(
+            "9.9.9",
+            vec![asset("op36-helper-portable-9.9.9.exe", Some(GOOD))],
+        );
+        assert_eq!(
+            available_update(&portable_only, Channel::Installed, "0.2.1"),
+            None
+        );
+        let no_digest = release("9.9.9", vec![asset("op36-helper-setup-9.9.9.exe", None)]);
+        assert_eq!(
+            available_update(&no_digest, Channel::Installed, "0.2.1"),
+            None
+        );
+    }
+
+    #[test]
+    fn newer_release_with_a_verifiable_asset_is_available() {
+        let r = release(
+            "9.9.9",
+            vec![asset("op36-helper-setup-9.9.9.exe", Some(GOOD))],
+        );
+        assert_eq!(
+            available_update(&r, Channel::Installed, "0.2.1").as_deref(),
+            Some("9.9.9")
+        );
+        assert_eq!(
+            available_update(&r, Channel::Installed, "9.9.9"),
+            None,
+            "same version is not an update"
+        );
+    }
+
+    #[test]
+    fn apply_script_relaunches_the_old_helper_when_it_cannot_apply() {
+        let s = apply_script();
+        assert!(
+            s.contains("-LiteralPath"),
+            "paths with [ ] must not be treated as wildcards"
+        );
+        assert!(
+            !s.contains("-Path $Exe") && !s.contains("-Path $Payload"),
+            "no wildcard -Path on user paths"
+        );
+        assert_eq!(
+            s.matches("exit 1").count(),
+            1,
+            "every failure goes through one Fail path that relaunches"
+        );
+        let fail_at = s.find("function Fail").expect("a Fail function");
+        let relaunch_in_fail = s[fail_at..]
+            .find("Start-Process")
+            .expect("Fail relaunches the helper");
+        assert!(relaunch_in_fail < s[fail_at..].find("exit 1").unwrap());
+        assert!(
+            s.contains("ExitCode"),
+            "the silent setup's exit code is checked"
+        );
     }
 }

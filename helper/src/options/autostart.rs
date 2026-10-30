@@ -9,6 +9,16 @@ use windows::core::{Interface, PCWSTR};
 use crate::paths::startup_shortcut;
 use crate::win::to_wide;
 
+/// Whether the helper starts with Windows: the Startup shortcut exists. The installer's task and
+/// the Options checkbox manage the same file, so the folder is the truth, not the saved setting.
+pub fn is_enabled() -> bool {
+    is_enabled_at(&startup_shortcut())
+}
+
+pub fn is_enabled_at(link: &Path) -> bool {
+    link.is_file()
+}
+
 /// Create or remove `OP36 Helper.lnk` pointing at `exe`.
 pub fn set(enabled: bool, exe: &Path) -> Result<(), String> {
     let link_path = startup_shortcut();
@@ -46,4 +56,22 @@ pub fn set(enabled: bool, exe: &Path) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enabled_means_the_startup_shortcut_exists() {
+        // The installer's "Start with Windows" task creates the same shortcut, so Options must read
+        // the folder rather than trust the saved setting (default false on a fresh install).
+        let dir = std::env::temp_dir().join(format!("op36-autostart-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let link = dir.join("OP36 Helper.lnk");
+        assert!(!is_enabled_at(&link));
+        std::fs::write(&link, b"lnk").unwrap();
+        assert!(is_enabled_at(&link));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

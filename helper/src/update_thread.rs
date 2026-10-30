@@ -10,8 +10,8 @@ use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::update::{
-    API_URL, Channel, Release, detect_channel, parse_release, pick_asset, refuse_reason,
-    updates_dir, verify_sha256,
+    API_URL, Channel, Release, available_update, detect_channel, parse_release, pick_asset,
+    refuse_reason, updates_dir, verify_sha256,
 };
 use crate::version::{VERSION, is_newer};
 use crate::win::msgwindow::WM_APP_UPDATE;
@@ -23,7 +23,8 @@ const FIRST_CHECK: Duration = Duration::from_secs(30);
 pub const CHECK_EVERY: Duration = Duration::from_secs(12 * 3600);
 
 pub enum UpdateCmd {
-    CheckNow,
+    /// Options was opened: a fresh look only if automatic checks are on (off = no traffic).
+    OptionsOpened,
     UpdateNow,
     /// The automatic check is on or off (from settings).
     AutoCheck(bool),
@@ -72,8 +73,12 @@ fn run(ui: UiWindow, rx: Receiver<UpdateCmd>, mut auto_check: bool) {
         match rx.recv_timeout(wait) {
             Err(RecvTimeoutError::Disconnected) => return,
             Ok(UpdateCmd::AutoCheck(on)) => auto_check = on,
-            Ok(UpdateCmd::CheckNow) => post(ui, check()),
             Ok(UpdateCmd::UpdateNow) => update(ui),
+            Ok(cmd) => {
+                if wants_check(&cmd, auto_check) {
+                    post(ui, check());
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {
                 if auto_check && Instant::now() >= next_check {
                     post(ui, check());
@@ -84,10 +89,24 @@ fn run(ui: UiWindow, rx: Receiver<UpdateCmd>, mut auto_check: bool) {
     }
 }
 
+/// Which commands make a request: an Options open only with automatic checks on, never the others
+/// ("Update now" fetches on its own and is the user's explicit ask).
+pub fn wants_check(cmd: &UpdateCmd, auto_check: bool) -> bool {
+    match cmd {
+        UpdateCmd::OptionsOpened => auto_check,
+        UpdateCmd::UpdateNow | UpdateCmd::AutoCheck(_) => false,
+    }
+}
+
 fn check() -> UpdateEvent {
+    let channel = std::env::current_exe()
+        .map(|exe| detect_channel(&exe, &dirs::data_local_dir().unwrap_or_default()))
+        .unwrap_or(Channel::Portable);
     match fetch_latest() {
-        Some(r) if is_newer(&r.version, VERSION) => UpdateEvent::Available(r.version),
-        Some(_) => UpdateEvent::UpToDate,
+        Some(r) => match available_update(&r, channel, VERSION) {
+            Some(v) => UpdateEvent::Available(v),
+            None => UpdateEvent::UpToDate,
+        },
         None => UpdateEvent::CheckFailed,
     }
 }
@@ -233,4 +252,19 @@ fn post(ui: UiWindow, event: UpdateEvent) {
 pub fn take_event(lparam: LPARAM) -> Box<UpdateEvent> {
     // SAFETY: `lparam` is a pointer produced by `Box::into_raw` in `post`.
     unsafe { Box::from_raw(lparam.0 as *mut UpdateEvent) }
+}
+
+#[cfg(test)]
+mod trigger_tests {
+    use super::*;
+
+    #[test]
+    fn opening_options_checks_only_when_automatic_checks_are_on() {
+        // "Check for updates automatically" off means a fully offline helper: no request on Options
+        // open. "Update now" is the user's explicit ask and fetches on its own.
+        assert!(!wants_check(&UpdateCmd::OptionsOpened, false));
+        assert!(wants_check(&UpdateCmd::OptionsOpened, true));
+        assert!(!wants_check(&UpdateCmd::UpdateNow, true));
+        assert!(!wants_check(&UpdateCmd::AutoCheck(true), true));
+    }
 }

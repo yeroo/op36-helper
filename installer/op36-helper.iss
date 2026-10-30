@@ -18,7 +18,8 @@ AppSupportURL={#AppUrl}
 VersionInfoVersion={#AppVersion}
 DefaultDirName={localappdata}\Programs\OP36 Helper
 DisableProgramGroupPage=yes
-DisableDirPage=auto
+; Always {localappdata}\Programs\OP36 Helper: the updater recognises it, and uninstall deletes {app}.
+DisableDirPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -46,7 +47,7 @@ Source: "stage\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs igno
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\assets\icon_on.ico"
 Name: "{autodesktop}\{#AppName}";  Filename: "{app}\{#AppExe}"; IconFilename: "{app}\assets\icon_on.ico"; Tasks: desktopicon
 ; The same shortcut the helper's own "Start with Windows" setting manages, so Options reflects it.
-Name: "{userstartup}\{#AppName}";  Filename: "{app}\{#AppExe}"; IconFilename: "{app}\assets\icon_on.ico"; Tasks: startup
+Name: "{userstartup}\{#AppName}";  Filename: "{app}\{#AppExe}"; IconFilename: "{app}\assets\icon_on.ico"; Check: StartupWanted
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
@@ -73,6 +74,16 @@ begin
       if FindWindowByClassName('Op36HelperMsg') = 0 then Break;
     end;
   end;
+end;
+
+{ The startup shortcut: the task's choice on an interactive install; on a silent upgrade (the
+  self-updater) whatever the user currently has, since Options may have removed it since. }
+function StartupWanted: Boolean;
+begin
+  if WizardSilent and RegKeyExists(HKCU, ExpandConstant('Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1')) then
+    Result := FileExists(ExpandConstant('{userstartup}\{#AppName}.lnk'))
+  else
+    Result := WizardIsTaskSelected('startup');
 end;
 
 function InitializeUninstall(): Boolean;

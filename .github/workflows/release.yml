@@ -39,11 +39,6 @@ jobs:
           restore-keys: ${{ runner.os }}-op36-firmware-
       - name: Install flip-link
         run: cargo install flip-link --locked
-      - name: Download uf2conv
-        run: |
-          for i in 1 2 3; do curl -fL --retry 3 https://raw.githubusercontent.com/microsoft/uf2/master/utils/uf2conv.py -o uf2conv.py && break || sleep 10; done
-          for i in 1 2 3; do curl -fL --retry 3 https://raw.githubusercontent.com/microsoft/uf2/master/utils/uf2families.json -o uf2families.json && break || sleep 10; done
-          python3 -c "import ast; ast.parse(open('uf2conv.py').read())"
       - name: Build central and peripheral
         working-directory: rmk/keyboards/op36
         env:
@@ -61,8 +56,9 @@ jobs:
           T=rmk/keyboards/op36/target/thumbv7em-none-eabihf/release
           arm-none-eabi-objcopy -O binary $T/central out/left.bin
           arm-none-eabi-objcopy -O binary $T/peripheral out/right.bin
-          python3 uf2conv.py out/left.bin  --base 0x26000 --family 0xADA52840 --output out/op36_left.uf2
-          python3 uf2conv.py out/right.bin --base 0x26000 --family 0xADA52840 --output out/op36_right.uf2
+          # The repo's pinned copy of Microsoft's uf2conv (the one build-op36.sh uses), not master.
+          python3 firmware/tools/uf2conv.py out/left.bin  --base 0x26000 --family 0xADA52840 --output out/op36_left.uf2
+          python3 firmware/tools/uf2conv.py out/right.bin --base 0x26000 --family 0xADA52840 --output out/op36_right.uf2
           git -C rmk describe --tags --always > out/BUILD_COMMIT.txt
           rm out/left.bin out/right.bin
           cat out/BUILD_COMMIT.txt
