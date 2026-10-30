@@ -1,0 +1,4 @@
+[submodule "rmk"]
+	path = rmk
+	url = https://github.com/yeroo/rmk.git
+	branch = op36-layer-notify

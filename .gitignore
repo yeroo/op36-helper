@@ -1,0 +1,8 @@
+_ref/
+_scratch/
+.superpowers/
+helper/target/
+.venv/
+__pycache__/
+installer/Output/
+installer/stage/

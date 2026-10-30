@@ -1,0 +1,137 @@
+name: Release
+# Tag a commit (`git tag v0.2.0 && git push origin v0.2.0`) to build the firmware pair, the helper,
+# the per-user installer and the portable exe, attest them, and publish a GitHub Release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write        # Sigstore build-provenance attestations (keyless)
+  attestations: write
+
+jobs:
+  firmware:
+    name: Build OP36 firmware (both halves)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Full history for the firmware's build id
+        run: git -C rmk fetch --tags --unshallow || git -C rmk fetch --tags
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eabi clang libclang-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rmk/keyboards/op36/target
+          key: ${{ runner.os }}-op36-firmware-${{ hashFiles('rmk/keyboards/op36/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-op36-firmware-
+      - name: Install flip-link
+        run: cargo install flip-link --locked
+      - name: Download uf2conv
+        run: |
+          for i in 1 2 3; do curl -fL --retry 3 https://raw.githubusercontent.com/microsoft/uf2/master/utils/uf2conv.py -o uf2conv.py && break || sleep 10; done
+          for i in 1 2 3; do curl -fL --retry 3 https://raw.githubusercontent.com/microsoft/uf2/master/utils/uf2families.json -o uf2families.json && break || sleep 10; done
+          python3 -c "import ast; ast.parse(open('uf2conv.py').read())"
+      - name: Build central and peripheral
+        working-directory: rmk/keyboards/op36
+        env:
+          # Debian/Ubuntu gcc-arm-none-eabi 13.2.1 layout (same as the vendor fork's CI).
+          BINDGEN_EXTRA_CLANG_ARGS: "--sysroot=/usr/lib/arm-none-eabi --target=arm-none-eabi -I/usr/lib/arm-none-eabi/include -I/usr/lib/gcc/arm-none-eabi/13.2.1/include"
+          KEYBOARD_TOML_PATH: ${{ github.workspace }}/rmk/keyboards/op36/keyboard.toml
+          VIAL_JSON_PATH: ${{ github.workspace }}/rmk/keyboards/op36/vial.json
+          RUST_MIN_STACK: "33554432"
+        run: |
+          cargo build --release --bin central
+          cargo build --release --bin peripheral
+      - name: Convert to UF2 and record the build id
+        run: |
+          mkdir -p out
+          T=rmk/keyboards/op36/target/thumbv7em-none-eabihf/release
+          arm-none-eabi-objcopy -O binary $T/central out/left.bin
+          arm-none-eabi-objcopy -O binary $T/peripheral out/right.bin
+          python3 uf2conv.py out/left.bin  --base 0x26000 --family 0xADA52840 --output out/op36_left.uf2
+          python3 uf2conv.py out/right.bin --base 0x26000 --family 0xADA52840 --output out/op36_right.uf2
+          git -C rmk describe --tags --always > out/BUILD_COMMIT.txt
+          rm out/left.bin out/right.bin
+          cat out/BUILD_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: out/
+          if-no-files-found: error
+
+  release:
+    name: Installer, portable exe, release
+    needs: firmware
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: helper
+      - name: Version must match the tag
+        shell: pwsh
+        run: |
+          $cargo = Get-Content helper/Cargo.toml -Raw
+          if ($cargo -notmatch '(?m)^version\s*=\s*"([^"]+)"') { throw "no version in helper/Cargo.toml" }
+          $ver = $Matches[1]
+          $tag = '${{ github.ref_name }}'
+          if ($tag -match '^v\d' -and $tag.TrimStart('v') -ne $ver) { throw "tag $tag does not match Cargo version $ver" }
+          "version $ver"
+      - name: cargo test
+        working-directory: helper
+        run: cargo test --locked
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: installer/firmware
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build installer and portable exe
+        shell: pwsh
+        run: |
+          ./installer/build.ps1 -FirmwareDir installer/firmware
+          ./installer/build-portable.ps1 -SkipCargo
+          Copy-Item installer/firmware/* installer/Output/
+          Get-ChildItem installer/Output -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+            Set-Content installer/Output/SHA256SUMS.txt
+          Get-Content installer/Output/SHA256SUMS.txt
+      # Keyless Sigstore provenance for every asset; verify with
+      #   gh attestation verify <file> --repo yeroo/op36-helper
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            installer/Output/op36-helper-setup-*.exe
+            installer/Output/op36-helper-portable-*.exe
+            installer/Output/op36_left.uf2
+            installer/Output/op36_right.uf2
+            installer/Output/BUILD_COMMIT.txt
+            installer/Output/SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            installer/Output/op36-helper-setup-*.exe
+            installer/Output/op36-helper-portable-*.exe
+            installer/Output/op36_left.uf2
+            installer/Output/op36_right.uf2
+            installer/Output/BUILD_COMMIT.txt
+            installer/Output/SHA256SUMS.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true

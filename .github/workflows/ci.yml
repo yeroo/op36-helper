@@ -1,0 +1,47 @@
+name: CI
+# Keeps main releasable: the helper's tests on Windows, the firmware fork's host tests on Linux.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  helper:
+    name: Helper tests (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: helper
+      - name: cargo test
+        working-directory: helper
+        run: cargo test --locked
+      - name: cargo build --release
+        working-directory: helper
+        run: cargo build --release --locked
+
+  firmware-host-tests:
+    name: Firmware host tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rmk/rmk
+      - name: cargo nextest (rmk, the OP36 feature set)
+        working-directory: rmk/rmk
+        run: >
+          cargo nextest run --config-file ../.config/nextest.toml --no-default-features
+          --features=split,vial,storage,async_matrix,_ble,layer_notify
