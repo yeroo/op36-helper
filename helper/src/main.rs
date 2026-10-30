@@ -1,6 +1,7 @@
 //! OP36 layout helper: tray application drawing a click-through overlay of the keymap.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auto_hide;
 mod find_key;
 mod firmware;
 mod firmware_thread;
@@ -73,6 +74,8 @@ const OFFLINE_GRACE_MS: u32 = 15_000;
 const TIMER_SWITCH: usize = 6;
 const SWITCH_BLINK_MS: u32 = 500;
 const HIDE_DELAY_MS: u32 = 1000;
+/// Timer id for hiding the overlay a minute after the keyboard was switched off.
+const TIMER_OFF_HIDE: usize = 7;
 const LOG_ROTATE_BYTES: u64 = 1_000_000;
 use win::to_wide;
 
@@ -161,7 +164,8 @@ struct App {
     hide_pending: bool,
     offline_pending: bool,
     switch_timer_on: bool,
-    /// A firmware flash in progress: the half and the way to cancel the worker.
+    /// Keyboard switched off: hide after a minute, restore when it is back.
+    auto_hide: auto_hide::AutoHide,
     /// A running flash: the half, its cancel channel and the last step shown.
     flash: Option<(
         vial::protocol::Side,
@@ -215,6 +219,11 @@ fn register_hotkeys(hwnd: HWND, settings: &Settings) -> Vec<String> {
 impl App {
     fn set_visible(&mut self, visible: bool) {
         self.settings.visible = visible;
+        self.auto_hide.user_toggled();
+        // SAFETY: our own timer.
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), TIMER_OFF_HIDE);
+        }
         let show = visible && self.model.wants_visible();
         self.overlay.show(show);
         self.overlay_shown = show;
@@ -236,7 +245,9 @@ impl App {
     /// Keep the app-bar reservation in line with settings, visibility and overlay size.
     fn update_appbar(&mut self, size: (i32, i32), mons: &[overlay::placement::MonitorInfo]) {
         let edge = edge_for(self.settings.anchor);
-        if !(self.settings.reserve_space && self.settings.visible) || edge.is_none() {
+        if !(self.settings.reserve_space && self.settings.visible && !self.auto_hide.is_hidden())
+            || edge.is_none()
+        {
             self.appbar.release();
             return;
         }
@@ -380,7 +391,14 @@ impl App {
         if let ModelEvent::Mods(m) = &event {
             log::debug!("mods: {m:?}");
         }
+        let was_connected = self.model.connected;
         self.model.apply_at(event, uptime_ms());
+        let action = match (was_connected, self.model.connected) {
+            (true, false) => self.auto_hide.on_disconnected(),
+            (false, true) => self.auto_hide.on_connected(),
+            _ => None,
+        };
+        self.apply_auto_hide(action);
         if let Some(bytes) = self.model.take_pending_cache_write() {
             if let Err(e) = std::fs::write(paths::keymap_cache_file(), bytes) {
                 log::warn!("could not cache keymap: {e}");
@@ -449,7 +467,7 @@ impl App {
 
     /// "Only while held": show at once when wanted, hide one second after nothing is held.
     fn apply_display_mode(&mut self) {
-        if !self.settings.visible {
+        if !self.settings.visible || self.auto_hide.is_hidden() {
             return;
         }
         let wanted = self.model.wants_visible();
@@ -490,6 +508,52 @@ impl App {
             self.offline_pending = false;
             self.on_model_event(ModelEvent::Hid(model::HidEvent::Disconnected));
         }
+    }
+
+    /// Carry out what the auto-hide machine decided on a connect, disconnect or timer tick.
+    fn apply_auto_hide(&mut self, action: Option<auto_hide::Action>) {
+        use auto_hide::Action;
+        let Some(action) = action else { return };
+        // SAFETY: timers on our own window.
+        unsafe {
+            match action {
+                Action::ArmTimer => {
+                    SetTimer(
+                        Some(self.hwnd),
+                        TIMER_OFF_HIDE,
+                        auto_hide::OFF_HIDE_DELAY_MS,
+                        None,
+                    );
+                    log::info!(
+                        "keyboard off: overlay hides in {} s",
+                        auto_hide::OFF_HIDE_DELAY_MS / 1000
+                    );
+                }
+                Action::CancelTimer => {
+                    let _ = KillTimer(Some(self.hwnd), TIMER_OFF_HIDE);
+                }
+                Action::Hide => {
+                    let _ = KillTimer(Some(self.hwnd), TIMER_OFF_HIDE);
+                    log::info!("keyboard still off: overlay hidden until it is back");
+                    self.overlay.show(false);
+                    self.overlay_shown = false;
+                    self.hide_pending = false;
+                    self.redraw(true); // releases the reserved screen space
+                }
+                Action::Restore => {
+                    log::info!("keyboard back: overlay restored");
+                    let show = self.settings.visible && self.model.wants_visible();
+                    self.overlay.show(show);
+                    self.overlay_shown = show;
+                    self.redraw(true);
+                }
+            }
+        }
+    }
+
+    fn on_off_hide_timer(&mut self) {
+        let action = self.auto_hide.on_timer();
+        self.apply_auto_hide(action);
     }
 
     fn on_hide_timer(&mut self) {
@@ -1001,6 +1065,9 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
                 )));
                 model.apply(ModelEvent::Hid(model::HidEvent::Disconnected));
             }
+            if args.iter().any(|a| a == "keyboard-off") {
+                model.apply(ModelEvent::Hid(model::HidEvent::Disconnected));
+            }
             let frame = model.frame(&WinCharSource::new());
             let mut renderer = Renderer::new().map_err(|e| e.to_string())?;
             renderer.switch_phase = true;
@@ -1174,6 +1241,7 @@ fn main() {
         overlay_shown: false,
         hide_pending: false,
         offline_pending: false,
+        auto_hide: Default::default(),
         switch_timer_on: false,
         flash: None,
         update_busy: false,
@@ -1264,6 +1332,12 @@ fn main() {
             if msg == WM_TIMER && wparam.0 == TIMER_SWITCH {
                 if let Ok(mut app) = app_for_handler.try_borrow_mut() {
                     app.on_switch_tick();
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_TIMER && wparam.0 == TIMER_OFF_HIDE {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_off_hide_timer();
                 }
                 return Some(LRESULT(0));
             }
@@ -1374,6 +1448,9 @@ fn main() {
         a.appbar = AppBar::new(hwnd);
         a.tray = Some(Tray::new(hwnd, false));
         a.hid = Some(hid_thread::spawn(hwnd));
+        // Started with the keyboard off: same minute, same hide; a connect within it cancels.
+        let action = a.auto_hide.on_disconnected();
+        a.apply_auto_hide(action);
         if let Ok(exe) = std::env::current_exe() {
             update::cleanup_leftovers(&exe);
         }

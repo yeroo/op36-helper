@@ -38,6 +38,10 @@ space" so maximized windows stop above the overlay, start with Windows, update c
 With the vendor's firmware the overlay already shows your keymap and language, but the layer, the
 battery pictograms and the master glyph need the firmware below.
 
+Switch the keyboard off and both halves grey out with *off*; after a minute the overlay hides
+itself and gives the screen space back. Switch the keyboard on again and it comes back by itself.
+Showing or hiding the overlay yourself in the meantime takes priority over that.
+
 ## Firmware
 
 Options → **Firmware and updates** shows the build each half reports and the build bundled with this

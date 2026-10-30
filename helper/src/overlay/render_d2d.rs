@@ -563,8 +563,8 @@ impl Renderer {
         );
     }
 
-    /// Grey wash plus `offline` over a half that is not linked to the master.
-    fn draw_offline_half(&mut self, side: crate::vial::protocol::Side) {
+    /// Grey wash plus a word (`offline`, `off`) over a half that is not there.
+    fn draw_offline_half(&mut self, side: crate::vial::protocol::Side, label: &str) {
         let hand = match side {
             crate::vial::protocol::Side::Left => Hand::Left,
             crate::vial::protocol::Side::Right => Hand::Right,
@@ -579,7 +579,7 @@ impl Renderer {
         let (bx, by, bw, bh) = battery_rect(hand);
         let text_color = if self.dark { TEXT_LIGHT } else { TEXT_DARK };
         self.text(
-            "offline",
+            label,
             13.0,
             Align::Center,
             D2D_RECT_F {
@@ -860,9 +860,18 @@ impl Renderer {
             for draw in &frame.keys {
                 self.draw_key(frame, draw, board);
             }
-            if let Some(side) = frame.offline_half {
+            if !frame.connected {
+                // The whole keyboard is off (or not found yet): both halves washed out.
                 self.target.SetTransform(&board);
-                self.draw_offline_half(side);
+                for side in [
+                    crate::vial::protocol::Side::Left,
+                    crate::vial::protocol::Side::Right,
+                ] {
+                    self.draw_offline_half(side, "off");
+                }
+            } else if let Some(side) = frame.offline_half {
+                self.target.SetTransform(&board);
+                self.draw_offline_half(side, "offline");
             }
             self.target.SetTransform(&board);
             let hidden = frame.offline_half;

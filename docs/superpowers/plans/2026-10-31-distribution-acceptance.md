@@ -91,3 +91,17 @@ ship as public **v0.2.3** (165 helper tests):
 | `OP36_UPDATE_API` seam live in release builds; a stray `v` tag could publish | the seam is `cfg!(debug_assertions)` only; release.yml rejects any `v` tag that is not `vX.Y.Z` equal to the Cargo version | debug build still honours the seam; release 0.2.3 run passes the check |
 | Build id `--dirty` only locally; helper compared the full bundled id with the firmware's 24-byte one | release.yml uses `--dirty` too; `half_status` compares at `FIRMWARE_BUILD_MAX` (24) | `bundled_build_id_is_compared_at_the_length_the_firmware_can_report` |
 | Disconnected keyboard said "unknown — flash both halves" + "flash left first"; reopening Options mid-flash lost the progress and Cancel | `firmware::describe` words a disconnected keyboard as "not connected" with no flash advice; `FirmwareView` carries the running flash step so a reopened dialog shows it with Cancel enabled | `disconnected_keyboard_gets_no_flash_advice`; dev build: flash started, dialog closed and reopened → step text and Cancel present, cancel works |
+
+## Keyboard off: show, hide after a minute, restore (0.2.4), 2026-10-30
+
+Boris asked: switching the keyboard off (master half included) should be shown, the overlay should
+hide after one minute, and it should come back when the halves are on again. Done as
+`helper/src/auto_hide.rs` (pure machine: ArmTimer / CancelTimer / Hide / Restore, tests for the
+happy path, an early reconnect, and the user's own toggle winning) wired to the connection
+transitions in `App::on_model_event`, timer `TIMER_OFF_HIDE` (60 s), the app-bar reservation and
+"only while held" mode. The renderer washes both halves out with "off" while disconnected
+(`--snapshot … keyboard-off` renders it). Starting the helper with the keyboard off counts as
+switched off too: the log shows "keyboard off: overlay hides in 60 s" and then "keyboard connected"
+two seconds later when it is on (the countdown is cancelled). The hide and the restore after a real
+power-off were not exercised here (the keyboard was on throughout); Boris's first evening with it is
+the device test. Shipped as public v0.2.4.
