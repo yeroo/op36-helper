@@ -42,6 +42,7 @@ jobs:
           workspaces: rmk/rmk
       - name: cargo nextest (rmk, the OP36 feature set)
         working-directory: rmk/rmk
+        # rmk/.cargo/config.toml defaults the build target to the nRF52840; host tests need the host.
         run: >
-          cargo nextest run --config-file ../.config/nextest.toml --no-default-features
-          --features=split,vial,storage,async_matrix,_ble,layer_notify
+          cargo nextest run --target x86_64-unknown-linux-gnu --config-file ../.config/nextest.toml
+          --no-default-features --features=split,vial,storage,async_matrix,_ble,layer_notify

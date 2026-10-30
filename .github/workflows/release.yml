@@ -108,9 +108,10 @@ jobs:
           ./installer/build.ps1 -FirmwareDir installer/firmware
           ./installer/build-portable.ps1 -SkipCargo
           Copy-Item installer/firmware/* installer/Output/
-          Get-ChildItem installer/Output -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
-            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
-            Set-Content installer/Output/SHA256SUMS.txt
+          # LF line endings so `sha256sum -c SHA256SUMS.txt` works on Linux and macOS too.
+          $sums = Get-ChildItem installer/Output -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
+          [IO.File]::WriteAllText("$PWD/installer/Output/SHA256SUMS.txt", ($sums -join "`n") + "`n")
           Get-Content installer/Output/SHA256SUMS.txt
       # Keyless Sigstore provenance for every asset; verify with
       #   gh attestation verify <file> --repo yeroo/op36-helper
