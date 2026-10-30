@@ -1,6 +1,6 @@
 [package]
 name = "op36-helper"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 description = "On-screen layout helper for the Ergohaven OmegaPoint36 keyboard"
 publish = false

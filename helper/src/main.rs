@@ -10,6 +10,7 @@ mod input;
 mod keymap;
 mod legend;
 mod model;
+mod offline_grace;
 mod options;
 mod overlay;
 mod paths;
@@ -162,7 +163,7 @@ struct App {
     /// "only while held" mode).
     overlay_shown: bool,
     hide_pending: bool,
-    offline_pending: bool,
+    offline_grace: offline_grace::OfflineGrace,
     switch_timer_on: bool,
     /// Keyboard switched off: hide after a minute, restore when it is back.
     auto_hide: auto_hide::AutoHide,
@@ -350,18 +351,20 @@ impl App {
         // last state and only flag offline when the link stays down.
         match &event {
             ModelEvent::Hid(model::HidEvent::Disconnected) => {
-                if self.model.connected && !self.offline_pending {
-                    self.offline_pending = true;
-                    // SAFETY: timer on our own window.
-                    unsafe {
-                        SetTimer(Some(self.hwnd), TIMER_OFFLINE, OFFLINE_GRACE_MS, None);
+                match self.offline_grace.on_disconnected(self.model.connected) {
+                    offline_grace::Gate::Hold => {
+                        // SAFETY: timer on our own window.
+                        unsafe {
+                            SetTimer(Some(self.hwnd), TIMER_OFFLINE, OFFLINE_GRACE_MS, None);
+                        }
+                        return;
                     }
-                    return;
+                    offline_grace::Gate::Ignore => return,
+                    offline_grace::Gate::Apply => {}
                 }
             }
             ModelEvent::Hid(model::HidEvent::Connected(_)) => {
-                if self.offline_pending {
-                    self.offline_pending = false;
+                if self.offline_grace.on_connected() {
                     // SAFETY: our own timer.
                     unsafe {
                         let _ = KillTimer(Some(self.hwnd), TIMER_OFFLINE);
@@ -370,6 +373,11 @@ impl App {
             }
             _ => {}
         }
+        self.apply_model_event(event);
+    }
+
+    /// Past the offline gate: update the model and everything that follows from it.
+    fn apply_model_event(&mut self, event: ModelEvent) {
         if let ModelEvent::Key(k) = &event {
             if self.settings.find_key && k.hid.is_some() {
                 let ms = (self.settings.find_key_secs.clamp(0.5, 5.0) * 1000.0) as u32;
@@ -504,9 +512,10 @@ impl App {
         unsafe {
             let _ = KillTimer(Some(self.hwnd), TIMER_OFFLINE);
         }
-        if self.offline_pending {
-            self.offline_pending = false;
-            self.on_model_event(ModelEvent::Hid(model::HidEvent::Disconnected));
+        if self.offline_grace.on_timer() == offline_grace::Gate::Apply {
+            // Straight to the model: going back through the gate would hold it again (the bug
+            // that kept a switched-off keyboard "on" forever).
+            self.apply_model_event(ModelEvent::Hid(model::HidEvent::Disconnected));
         }
     }
 
@@ -1240,7 +1249,7 @@ fn main() {
         last_tooltip: String::new(),
         overlay_shown: false,
         hide_pending: false,
-        offline_pending: false,
+        offline_grace: Default::default(),
         auto_hide: Default::default(),
         switch_timer_on: false,
         flash: None,

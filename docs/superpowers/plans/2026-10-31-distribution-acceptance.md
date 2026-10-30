@@ -105,3 +105,13 @@ switched off too: the log shows "keyboard off: overlay hides in 60 s" and then "
 two seconds later when it is on (the countdown is cancelled). The hide and the restore after a real
 power-off were not exercised here (the keyboard was on throughout); Boris's first evening with it is
 the device test. Shipped as public v0.2.4.
+
+## Keyboard off did nothing: offline grace never applied (0.2.5), 2026-10-31
+
+Boris switched the keyboard off; the log shows "keyboard disconnected" at 19:58:13 and nothing after
+it. Root cause: the 15 s offline grace in `App::on_model_event` held the disconnect, and when its
+timer fired the handler re-sent the same event through the same gate, which held it again, forever.
+The keyboard had never been shown as offline since the grace was introduced. Fix: `offline_grace.rs`,
+a pure gate (Hold / Apply / Ignore) with tests, and the timer applies the disconnect to the model
+directly (`apply_model_event`). 172 helper tests. Device check with the keyboard off: the 0.2.5 build
+starts with "keyboard off: overlay hides in 60 s" and the hide and restore are recorded below.
