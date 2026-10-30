@@ -141,11 +141,14 @@ pub fn req_firmware_build(side: Side) -> Packet {
     ])
 }
 
+/// The firmware carries at most this many bytes of `git describe` (`SplitMessage::FirmwareBuild`).
+pub const FIRMWARE_BUILD_MAX: usize = 24;
+
 /// `E9 03 side len text…`; an empty text means the keyboard does not know that half's build yet.
 pub fn parse_firmware_build(pkt: &Packet) -> Option<(Side, String)> {
     (pkt[0] == LAYER_NOTIFY_NAMESPACE && pkt[1] == LAYER_NOTIFY_SUB_FIRMWARE).then(|| {
         let side = if pkt[2] == 1 { Side::Right } else { Side::Left };
-        let n = (pkt[3] as usize).min(28);
+        let n = (pkt[3] as usize).min(FIRMWARE_BUILD_MAX);
         (side, String::from_utf8_lossy(&pkt[4..4 + n]).into_owned())
     })
 }

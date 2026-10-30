@@ -112,8 +112,13 @@ pub struct FirmwareView {
     pub note: String,
     /// The Flash buttons are enabled (a bundle exists and no flash is running).
     pub can_flash: bool,
+    /// A flash is running: `status` shows its current step and Cancel is live.
+    pub flashing: bool,
+    pub status: String,
     /// `Helper 0.2.0 — up to date` / `0.2.1 available` / `checking…`.
     pub update_line: String,
+    /// "Update now" is enabled (no requested update in flight).
+    pub can_update: bool,
 }
 
 pub type ActionHandler = Box<dyn FnMut(DialogAction) -> Result<(), String>>;
@@ -212,9 +217,14 @@ impl OptionsDialog {
         self.hwnd
     }
 
-    /// The update line (`0.2.1 available`, `downloading…`, a failure).
-    pub fn set_update_line(&self, text: &str) {
+    /// The update line (`0.2.1 available`, `downloading…`, a failure) and whether "Update now"
+    /// may be clicked (not while a requested update is in flight).
+    pub fn set_update_line(&self, text: &str, can_update: bool) {
         set_text(self.hwnd, ID_UPDATE_LINE, text);
+        // SAFETY: own child control.
+        unsafe {
+            let _ = EnableWindow(child(self.hwnd, ID_UPDATE_NOW), can_update);
+        }
     }
 
     /// Progress of a running flash (and the end of it: buttons come back).
@@ -762,7 +772,13 @@ fn build(hwnd: HWND, st: &mut State) {
         hwnd,
         "BUTTON",
         "Cancel flash",
-        BS_PUSHBUTTON as u32 | WS_TABSTOP.0 | WS_DISABLED.0,
+        BS_PUSHBUTTON as u32
+            | WS_TABSTOP.0
+            | if st.firmware.flashing {
+                0
+            } else {
+                WS_DISABLED.0
+            },
         ID_FW_CANCEL,
         &l,
         340,
@@ -771,13 +787,25 @@ fn build(hwnd: HWND, st: &mut State) {
         26,
         f,
     );
-    static_(&st.firmware.note, 20, 462, 620, 22, ID_FW_STATUS);
+    // Reopened during a flash: show where it is, not the advice line.
+    let status = if st.firmware.flashing {
+        &st.firmware.status
+    } else {
+        &st.firmware.note
+    };
+    static_(status, 20, 462, 620, 22, ID_FW_STATUS);
     static_(&st.firmware.update_line, 20, 488, 460, 20, ID_UPDATE_LINE);
     make(
         hwnd,
         "BUTTON",
         "Update now",
-        BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+        BS_PUSHBUTTON as u32
+            | WS_TABSTOP.0
+            | if st.firmware.can_update {
+                0
+            } else {
+                WS_DISABLED.0
+            },
         ID_UPDATE_NOW,
         &l,
         490,

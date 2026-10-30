@@ -44,3 +44,50 @@ on a SmartScreen prompt are listed as pending.
 
 End state: 0.2.1 installed and running from `%LOCALAPPDATA%\Programs\OP36 Helper`, Startup shortcut
 points at it (the dev-build shortcut is gone), settings untouched.
+
+## Final review and 0.2.2, 2026-10-30
+
+A fresh reviewer read the whole branch (02e0c10..34a962e): no Critical, five Important, eight Minor
+findings. All five Important ones and one re-graded Minor were fixed with tests first (158 helper tests
+now) and shipped as public release **v0.2.2** (run 41069491007; private commits d7ecf95, a7b0f99):
+
+| Finding | Fix | Verified by |
+|---|---|---|
+| A release published before its assets are uploaded counted as "available" | `update::available_update` requires a channel asset with a verifiable digest | unit tests; live update below |
+| Opening Options contacted GitHub with automatic checks off | `UpdateCmd::OptionsOpened` is gated on the setting; the unconditional check command is gone | unit test |
+| Apply-script failures left no helper running; `-Path` treated `[ ]` as wildcards | `-LiteralPath` everywhere, setup exit code checked, every failure relaunches the old exe | script text test; bogus payload in `p [x]` → rolled back and relaunched; real swap in `p [x]` → new exe in place, back in 7 s |
+| "Start with Windows" ignored the installer's shortcut; silent upgrades re-created a removed one | `autostart::is_enabled` at start-up; installer `Check: StartupWanted` keeps the current state on silent upgrades | unit test; shortcut removed stays removed, present stays present, fresh silent install with the task creates it |
+| Release workflow ran `uf2conv.py` from microsoft/uf2 master | uses the repo's hash-pinned `firmware/tools/uf2conv.py` | v0.2.2 firmware job green; UF2s carry `v0.2.0-23-g74ed094c` |
+| (re-graded) a user-chosen install folder could be deleted whole on uninstall | `DisableDirPage=yes` | 0.2.2 installer builds and installs |
+
+Live update **0.2.1 → 0.2.2**: Options open → "0.2.2 available" → Update now → Downloading 14:20:04 →
+Verified 14:20:06 → exited → 0.2.2 running from the install directory at 14:20:23 (17 s), Startup
+shortcut kept, no leftovers. `sha256sum -c` and the setup attestation pass on the downloaded 0.2.2
+assets. The UF2 bytes differ between the 0.2.1 and 0.2.2 CI builds (same source, same build id):
+the firmware build is not bit-reproducible across runs, which is why the helper compares build ids,
+not hashes.
+
+Deferred minors (reviewer's list, Boris's call): a UF2 drive already mounted when Flash is clicked is
+written at once; `fs::copy` may report an error after a good write when the bootloader reboots
+early; Update now is not disabled after a click; update/flash events are dropped while the app state
+is borrowed; the `OP36_UPDATE_API` seam is live in release builds and a `v`-tag that is not `v<digit>`
+skips the version check; `--dirty` only locally and the id is cut at 28 bytes; two stray UI states
+(disconnected keyboard wording, reopening Options mid-flash).
+
+Still pending with Boris at the machine: SmartScreen on a browser-downloaded setup exe, and one real
+flash from Options (both halves already run the release build id).
+
+## Deferred minors done, 0.2.3, 2026-10-30
+
+Boris asked for the reviewer's minors as well. All seven are in private commits after a7b0f99 and
+ship as public **v0.2.3** (165 helper tests):
+
+| Minor | Change | Verified by |
+|---|---|---|
+| A bootloader drive already mounted at the click was flashed at once | `FlashMachine::new(side, now, mounted)` ignores that drive until it has gone away once; new step `AlreadyMounted` tells the user to double-tap reset on the named half | `a_drive_already_mounted_at_the_click_is_not_flashed_until_it_reappears` |
+| `fs::copy` error after a good write reported "Flash failed" | copy errors enter a `CopyFailed` phase: drive gone within 3 s = Done, drive still there = Failed with the error | two machine tests; the old immediate-failure test updated on purpose |
+| Update now not disabled after a click | `App.update_busy`; the dialog disables the button on click and until a terminal event (`update_in_progress_after`) | unit test; debug build against a non-routable host: button off right after the click and 6 s later |
+| Update/flash events dropped while `App` was borrowed | `win::deferred::Deferred` parks them and the next message replays them in order | `parked_events_replay_in_order_once` |
+| `OP36_UPDATE_API` seam live in release builds; a stray `v` tag could publish | the seam is `cfg!(debug_assertions)` only; release.yml rejects any `v` tag that is not `vX.Y.Z` equal to the Cargo version | debug build still honours the seam; release 0.2.3 run passes the check |
+| Build id `--dirty` only locally; helper compared the full bundled id with the firmware's 24-byte one | release.yml uses `--dirty` too; `half_status` compares at `FIRMWARE_BUILD_MAX` (24) | `bundled_build_id_is_compared_at_the_length_the_firmware_can_report` |
+| Disconnected keyboard said "unknown — flash both halves" + "flash left first"; reopening Options mid-flash lost the progress and Cancel | `firmware::describe` words a disconnected keyboard as "not connected" with no flash advice; `FirmwareView` carries the running flash step so a reopened dialog shows it with Cancel enabled | `disconnected_keyboard_gets_no_flash_advice`; dev build: flash started, dialog closed and reopened → step text and Cancel present, cancel works |

@@ -59,7 +59,8 @@ jobs:
           # The repo's pinned copy of Microsoft's uf2conv (the one build-op36.sh uses), not master.
           python3 firmware/tools/uf2conv.py out/left.bin  --base 0x26000 --family 0xADA52840 --output out/op36_left.uf2
           python3 firmware/tools/uf2conv.py out/right.bin --base 0x26000 --family 0xADA52840 --output out/op36_right.uf2
-          git -C rmk describe --tags --always > out/BUILD_COMMIT.txt
+          # Same command as rmk/keyboards/op36/build.rs, so the file equals the id the firmware reports.
+          git -C rmk describe --tags --always --dirty > out/BUILD_COMMIT.txt
           rm out/left.bin out/right.bin
           cat out/BUILD_COMMIT.txt
       - uses: actions/upload-artifact@v4
@@ -87,7 +88,13 @@ jobs:
           if ($cargo -notmatch '(?m)^version\s*=\s*"([^"]+)"') { throw "no version in helper/Cargo.toml" }
           $ver = $Matches[1]
           $tag = '${{ github.ref_name }}'
-          if ($tag -match '^v\d' -and $tag.TrimStart('v') -ne $ver) { throw "tag $tag does not match Cargo version $ver" }
+          # Any tag that reaches this workflow must be exactly vX.Y.Z and equal the Cargo version: the
+          # helper's release check wants that form and a stray tag would otherwise publish a release
+          # no copy could ever pick up.
+          if ($tag -match '^v') {
+            if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "tag $tag is not vX.Y.Z" }
+            if ($tag.TrimStart('v') -ne $ver) { throw "tag $tag does not match Cargo version $ver" }
+          }
           "version $ver"
       - name: cargo test
         working-directory: helper

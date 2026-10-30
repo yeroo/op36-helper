@@ -38,7 +38,8 @@ pub fn spawn(ui_hwnd: HWND, side: Side, bundle: Bundle) -> Sender<()> {
 
 fn run(ui: UiWindow, side: Side, bundle: Bundle, cancel: Receiver<()>) {
     let start = Instant::now();
-    let mut machine = FlashMachine::new(side, 0);
+    // A bootloader drive already open now may be the other half: ignored until it reappears.
+    let mut machine = FlashMachine::new(side, 0, find_uf2_drive());
     let mut copy_result: Option<Result<(), String>> = None;
     let mut last: Option<FlashStep> = None;
     loop {

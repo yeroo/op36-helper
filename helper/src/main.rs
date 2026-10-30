@@ -162,7 +162,14 @@ struct App {
     offline_pending: bool,
     switch_timer_on: bool,
     /// A firmware flash in progress: the half and the way to cancel the worker.
-    flash: Option<(vial::protocol::Side, std::sync::mpsc::Sender<()>)>,
+    /// A running flash: the half, its cancel channel and the last step shown.
+    flash: Option<(
+        vial::protocol::Side,
+        std::sync::mpsc::Sender<()>,
+        firmware::FlashStep,
+    )>,
+    /// A requested update is in flight (Update now stays disabled).
+    update_busy: bool,
     update: Option<std::sync::mpsc::Sender<UpdateCmd>>,
     /// Newest release seen, the version the balloon was shown for, and the dialog's update line.
     update_latest: Option<String>,
@@ -516,54 +523,31 @@ impl App {
 
     /// What the Options dialog's Firmware group shows.
     fn firmware_view(&self) -> FirmwareView {
-        use firmware::{HalfStatus, half_status, halves_differ};
         let bundle = self.bundle();
         let [left, right] = &self.model.firmware;
-        let word = |reported: &Option<String>| match &bundle {
-            None => reported.clone().unwrap_or_else(|| "unknown".to_string()),
-            Some(b) => match half_status(reported.as_deref(), &b.build) {
-                HalfStatus::UpToDate => {
-                    format!("{} (up to date)", reported.as_deref().unwrap_or(""))
-                }
-                HalfStatus::UpdateAvailable => {
-                    format!("{} (update available)", reported.as_deref().unwrap_or(""))
-                }
-                HalfStatus::Unknown => "unknown — flash both halves".to_string(),
-            },
+        let words = firmware::describe(
+            self.model.connected,
+            left.as_deref(),
+            right.as_deref(),
+            bundle.as_ref().map(|b| b.build.as_str()),
+        );
+        let (flashing, status) = match &self.flash {
+            Some((side, _, step)) => (true, step.text(*side)),
+            None => (false, String::new()),
         };
-        let mut note = String::new();
-        if let Some(b) = &bundle {
-            let lagging = [left, right]
-                .iter()
-                .any(|r| half_status(r.as_deref(), &b.build) != HalfStatus::UpToDate);
-            if lagging {
-                let first = firmware::first_to_flash(left.as_deref(), right.as_deref(), &b.build);
-                note.push_str(&format!(
-                    "Flash the {} half first, then the other one.",
-                    if first == vial::protocol::Side::Left {
-                        "left"
-                    } else {
-                        "right"
-                    }
-                ));
-            }
-        }
-        if halves_differ(left.as_deref(), right.as_deref()) {
-            note.push_str(" The halves run different builds.");
-        }
-        if !self.model.connected {
-            note.push_str(" Keyboard not connected.");
-        }
         FirmwareView {
-            left: format!("Left half: {}", word(left)),
-            right: format!("Right half: {}", word(right)),
+            left: words.left,
+            right: words.right,
             bundled: match &bundle {
                 Some(b) => format!("Bundled: {}", b.build),
                 None => "Bundled: no firmware files next to the exe".to_string(),
             },
-            note: note.trim().to_string(),
+            note: words.note,
             can_flash: bundle.is_some() && self.flash.is_none(),
+            flashing,
+            status,
             update_line: self.update_line.clone(),
+            can_update: !self.update_busy,
         }
     }
 
@@ -585,8 +569,9 @@ impl App {
         };
         log::info!("update: {line}");
         self.update_line = line.clone();
+        self.update_busy = update_thread::update_in_progress_after(&event);
         if let Some(dlg) = &self.options {
-            dlg.set_update_line(&line);
+            dlg.set_update_line(&line, !self.update_busy);
         }
         match event {
             UpdateEvent::Available(v) => {
@@ -657,8 +642,9 @@ impl App {
             }
             Err(e) => {
                 self.update_line = format!("Update failed: cannot start the apply script: {e}");
+                self.update_busy = false;
                 if let Some(dlg) = &self.options {
-                    dlg.set_update_line(&self.update_line);
+                    dlg.set_update_line(&self.update_line, true);
                 }
             }
         }
@@ -671,25 +657,27 @@ impl App {
         }
         let bundle = self.bundle().ok_or("no bundled firmware next to the exe")?;
         let cancel = firmware_thread::spawn(self.hwnd, side, bundle);
-        self.flash = Some((side, cancel));
+        let first = firmware::FlashStep::WaitingForDrive;
         if let Some(dlg) = &self.options {
-            dlg.set_firmware_status(&firmware::FlashStep::WaitingForDrive.text(side), true);
+            dlg.set_firmware_status(&first.text(side), true);
         }
+        self.flash = Some((side, cancel, first));
         log::info!("flash: started for the {side:?} half");
         Ok(())
     }
 
     fn cancel_flash(&mut self) {
-        if let Some((_, cancel)) = &self.flash {
+        if let Some((_, cancel, _)) = &self.flash {
             let _ = cancel.send(());
         }
     }
 
     /// A step from the flash thread: show it; a final step frees the buttons again.
     fn on_flash_step(&mut self, step: firmware::FlashStep) {
-        let Some(side) = self.flash.as_ref().map(|(side, _)| *side) else {
+        let Some((side, _, last)) = self.flash.as_mut() else {
             return;
         };
+        let side = *side;
         let done = step.is_final();
         log::info!("flash: {:?} half: {:?}", side, step);
         if let Some(dlg) = &self.options {
@@ -697,6 +685,8 @@ impl App {
         }
         if done {
             self.flash = None;
+        } else {
+            *last = step;
         }
     }
 
@@ -1094,6 +1084,11 @@ fn open_options(app: &Rc<RefCell<App>>) {
                 }
                 DialogAction::FlashHalf(side) => a.start_flash(side),
                 DialogAction::UpdateNow => {
+                    // Off until the worker reports back: a second click must not re-download.
+                    a.update_busy = true;
+                    if let Some(dlg) = &a.options {
+                        dlg.set_update_line(&a.update_line, false);
+                    }
                     if let Some(tx) = &a.update {
                         let _ = tx.send(UpdateCmd::UpdateNow);
                     }
@@ -1181,6 +1176,7 @@ fn main() {
         offline_pending: false,
         switch_timer_on: false,
         flash: None,
+        update_busy: false,
         update: None,
         update_latest: None,
         update_notified: None,
@@ -1191,6 +1187,11 @@ fn main() {
     // SAFETY: plain registration of a well-known message name.
     let taskbar_created = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
     let app_for_handler = Rc::clone(&app);
+    enum Parked {
+        Update(UpdateEvent),
+        Flash(firmware::FlashStep),
+    }
+    let deferred: win::deferred::Deferred<Parked> = Default::default();
     let msg_window = MsgWindow::create(Box::new(
         move |hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM| {
             match msgwindow::system_request(msg, wparam.0) {
@@ -1233,17 +1234,30 @@ fn main() {
                 }
                 return Some(LRESULT(0));
             }
+            // Worker events wait their turn instead of being dropped while App is borrowed.
+            if !deferred.is_empty()
+                && let Ok(mut app) = app_for_handler.try_borrow_mut()
+            {
+                for item in deferred.take() {
+                    match item {
+                        Parked::Update(e) => app.on_update_event(e),
+                        Parked::Flash(s) => app.on_flash_step(s),
+                    }
+                }
+            }
             if msg == WM_APP_UPDATE {
                 let event = update_thread::take_event(lparam);
-                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                    app.on_update_event(*event);
+                match app_for_handler.try_borrow_mut() {
+                    Ok(mut app) => app.on_update_event(*event),
+                    Err(_) => deferred.park(Parked::Update(*event)),
                 }
                 return Some(LRESULT(0));
             }
             if msg == WM_APP_FLASH {
                 let step = firmware_thread::take_step(lparam);
-                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                    app.on_flash_step(*step);
+                match app_for_handler.try_borrow_mut() {
+                    Ok(mut app) => app.on_flash_step(*step),
+                    Err(_) => deferred.park(Parked::Flash(*step)),
                 }
                 return Some(LRESULT(0));
             }

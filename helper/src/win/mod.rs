@@ -1,5 +1,6 @@
 //! Small Win32 helpers shared by the window, tray and overlay code.
 
+pub mod deferred;
 pub mod msgwindow;
 
 use windows::Win32::Foundation::HINSTANCE;

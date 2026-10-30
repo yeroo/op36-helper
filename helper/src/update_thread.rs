@@ -89,6 +89,15 @@ fn run(ui: UiWindow, rx: Receiver<UpdateCmd>, mut auto_check: bool) {
     }
 }
 
+/// After this event, is a user-requested update still in flight? The dialog keeps "Update now"
+/// disabled while it is, so a second click cannot re-download over the verified payload.
+pub fn update_in_progress_after(event: &UpdateEvent) -> bool {
+    matches!(
+        event,
+        UpdateEvent::Downloading(_) | UpdateEvent::Verified { .. }
+    )
+}
+
 /// Which commands make a request: an Options open only with automatic checks on, never the others
 /// ("Update now" fetches on its own and is the user's explicit ask).
 pub fn wants_check(cmd: &UpdateCmd, auto_check: bool) -> bool {
@@ -193,10 +202,15 @@ fn update(ui: UiWindow) {
 
 /// The latest release document, from the API or the `OP36_UPDATE_API` test seam.
 fn fetch_latest() -> Option<Release> {
-    let api = std::env::var(API_ENV)
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| API_URL.to_string());
+    // The seam is for development builds only; a release build always asks GitHub.
+    let api = if cfg!(debug_assertions) {
+        std::env::var(API_ENV)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| API_URL.to_string())
+    } else {
+        API_URL.to_string()
+    };
     let json = if !api.starts_with("http") && std::path::Path::new(&api).is_file() {
         std::fs::read_to_string(&api).ok()?
     } else {
@@ -266,5 +280,25 @@ mod trigger_tests {
         assert!(wants_check(&UpdateCmd::OptionsOpened, true));
         assert!(!wants_check(&UpdateCmd::UpdateNow, true));
         assert!(!wants_check(&UpdateCmd::AutoCheck(true), true));
+    }
+}
+
+#[cfg(test)]
+mod busy_tests {
+    use super::*;
+
+    #[test]
+    fn update_now_stays_disabled_until_the_request_settles() {
+        // A second click while the payload is being fetched would re-download over the file the
+        // apply script is about to run; the button comes back only on a terminal event.
+        assert!(update_in_progress_after(&UpdateEvent::Downloading(
+            "9.9.9".into()
+        )));
+        assert!(!update_in_progress_after(&UpdateEvent::Failed("x".into())));
+        assert!(!update_in_progress_after(&UpdateEvent::UpToDate));
+        assert!(!update_in_progress_after(&UpdateEvent::Available(
+            "9.9.9".into()
+        )));
+        assert!(!update_in_progress_after(&UpdateEvent::CheckFailed));
     }
 }
