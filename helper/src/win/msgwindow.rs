@@ -8,8 +8,9 @@ use std::ffi::c_void;
 
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW, HMENU,
-    RegisterClassW, SetWindowLongPtrW, WINDOW_EX_STYLE, WM_APP, WM_NCCREATE, WNDCLASSW, WS_POPUP,
+    CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
+    GetWindowLongPtrW, HMENU, RegisterClassW, SetWindowLongPtrW, WINDOW_EX_STYLE, WM_APP, WM_CLOSE,
+    WM_ENDSESSION, WM_NCCREATE, WM_QUERYENDSESSION, WNDCLASSW, WS_POPUP,
 };
 use windows::core::PCWSTR;
 
@@ -30,6 +31,27 @@ pub const WM_APP_LANG: u32 = WM_APP + 5;
 pub const WM_APP_FLASH: u32 = WM_APP + 6;
 /// Update thread → UI thread: `LPARAM` is a `Box<UpdateEvent>` pointer.
 pub const WM_APP_UPDATE: u32 = WM_APP + 7;
+
+/// What the system is asking of one of our top-level windows. Restart Manager (an installer
+/// replacing our files with Inno's `CloseApplications`) and logoff/shutdown both send
+/// WM_QUERYENDSESSION, then WM_ENDSESSION with wParam TRUE; WM_CLOSE from anyone means the same.
+/// Left to `DefWindowProc` the helper never exits and the installer gives up after 30 s.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemRequest {
+    /// Answer TRUE: we can end.
+    AgreeToEnd,
+    /// Leave the message loop now.
+    Exit,
+}
+
+pub fn system_request(msg: u32, wparam: usize) -> Option<SystemRequest> {
+    match msg {
+        WM_QUERYENDSESSION => Some(SystemRequest::AgreeToEnd),
+        WM_ENDSESSION if wparam != 0 => Some(SystemRequest::Exit),
+        WM_CLOSE => Some(SystemRequest::Exit),
+        _ => None,
+    }
+}
 
 pub type Handler = Box<dyn FnMut(HWND, u32, WPARAM, LPARAM) -> Option<LRESULT>>;
 
@@ -71,7 +93,10 @@ impl MsgWindow {
                 Some(param as *const c_void),
             )?
         };
-        Ok(MsgWindow { hwnd, _handler: boxed })
+        Ok(MsgWindow {
+            hwnd,
+            _handler: boxed,
+        })
     }
 
     pub fn hwnd(&self) -> HWND {
@@ -103,5 +128,28 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
         }
         DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restart_manager_close_request_exits() {
+        // Inno Setup's CloseApplications asks through Restart Manager: WM_QUERYENDSESSION, then
+        // WM_ENDSESSION with wParam TRUE. WM_CLOSE from anyone else means the same.
+        assert_eq!(
+            system_request(WM_QUERYENDSESSION, 0),
+            Some(SystemRequest::AgreeToEnd)
+        );
+        assert_eq!(system_request(WM_ENDSESSION, 1), Some(SystemRequest::Exit));
+        assert_eq!(system_request(WM_CLOSE, 0), Some(SystemRequest::Exit));
+    }
+
+    #[test]
+    fn cancelled_end_session_and_other_messages_are_not_requests() {
+        assert_eq!(system_request(WM_ENDSESSION, 0), None);
+        assert_eq!(system_request(WM_APP_TOGGLE, 0), None);
     }
 }

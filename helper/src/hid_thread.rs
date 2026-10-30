@@ -141,7 +141,8 @@ fn session(
                 }
             }
         }
-        if t.transport == crate::vial::transport::Transport::Ble && Instant::now() >= next_usb_check {
+        if t.transport == crate::vial::transport::Transport::Ble && Instant::now() >= next_usb_check
+        {
             next_usb_check = Instant::now() + USB_UPGRADE_EVERY;
             let _ = api.refresh_devices();
             if t.usb_available(api) {
@@ -202,8 +203,17 @@ mod tests {
 
     #[test]
     fn handoff_in_stray_packets_is_delivered() {
-        assert_eq!(route_layer_packet(&LayerPacket::Handoff(Side::Left)), HidEvent::Switching(Side::Left));
-        let state = crate::vial::protocol::LayerState { active: 2, ..Default::default() };
-        assert_eq!(route_layer_packet(&LayerPacket::State(state)), HidEvent::Layer(state));
+        assert_eq!(
+            route_layer_packet(&LayerPacket::Handoff(Side::Left)),
+            HidEvent::Switching(Side::Left)
+        );
+        let state = crate::vial::protocol::LayerState {
+            active: 2,
+            ..Default::default()
+        };
+        assert_eq!(
+            route_layer_packet(&LayerPacket::State(state)),
+            HidEvent::Layer(state)
+        );
     }
 }

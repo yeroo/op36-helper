@@ -67,11 +67,20 @@ pub fn req_next_native_action(start: u16) -> Packet {
 }
 
 pub fn req_layer_subscribe(ttl_secs: u8) -> Packet {
-    packet(&[CMD_CUSTOM_SET_VALUE, LAYER_NOTIFY_NAMESPACE, LAYER_NOTIFY_SUB_STATE, ttl_secs])
+    packet(&[
+        CMD_CUSTOM_SET_VALUE,
+        LAYER_NOTIFY_NAMESPACE,
+        LAYER_NOTIFY_SUB_STATE,
+        ttl_secs,
+    ])
 }
 
 pub fn req_layer_state() -> Packet {
-    packet(&[CMD_CUSTOM_GET_VALUE, LAYER_NOTIFY_NAMESPACE, LAYER_NOTIFY_SUB_STATE])
+    packet(&[
+        CMD_CUSTOM_GET_VALUE,
+        LAYER_NOTIFY_NAMESPACE,
+        LAYER_NOTIFY_SUB_STATE,
+    ])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -124,7 +133,12 @@ pub fn parse_layer_state(pkt: &Packet) -> Option<LayerState> {
 
 /// Ask the keyboard for one half's firmware build id (`git describe` at build time).
 pub fn req_firmware_build(side: Side) -> Packet {
-    packet(&[CMD_CUSTOM_GET_VALUE, LAYER_NOTIFY_NAMESPACE, LAYER_NOTIFY_SUB_FIRMWARE, (side == Side::Right) as u8])
+    packet(&[
+        CMD_CUSTOM_GET_VALUE,
+        LAYER_NOTIFY_NAMESPACE,
+        LAYER_NOTIFY_SUB_FIRMWARE,
+        (side == Side::Right) as u8,
+    ])
 }
 
 /// `E9 03 side len text…`; an empty text means the keyboard does not know that half's build yet.
@@ -211,7 +225,12 @@ pub fn req_native_action_set(layer: u8, row: u8, col: u8, action: &KeyAction) ->
 
 /// Vial combo write: `FE 0D 04 idx k0 k1 k2 k3 out` with little-endian VIA keycodes (unused keys 0).
 pub fn req_combo_set(index: u8, keys: &[u16], output: u16) -> Packet {
-    let mut p = packet(&[CMD_VIAL, VIAL_DYNAMIC_ENTRY_OP, VIAL_DYNAMIC_COMBO_SET, index]);
+    let mut p = packet(&[
+        CMD_VIAL,
+        VIAL_DYNAMIC_ENTRY_OP,
+        VIAL_DYNAMIC_COMBO_SET,
+        index,
+    ]);
     for (i, kc) in keys.iter().take(COMBO_MAX_LENGTH).enumerate() {
         p[4 + i * 2..6 + i * 2].copy_from_slice(&kc.to_le_bytes());
     }
@@ -225,7 +244,9 @@ pub fn action_to_via_keycode(action: &KeyAction) -> Option<u16> {
         KeyAction::No => Some(0),
         KeyAction::Transparent => Some(1),
         KeyAction::Single(Action::Key(KeyCode::Hid(h))) => Some(*h as u16),
-        KeyAction::Single(Action::KeyWithModifier(h, m)) => Some(((m.into_packed_bits() as u16) << 8) | *h as u16),
+        KeyAction::Single(Action::KeyWithModifier(h, m)) => {
+            Some(((m.into_packed_bits() as u16) << 8) | *h as u16)
+        }
         KeyAction::Single(Action::LayerOn(l)) => Some(0x5220 | *l as u16),
         _ => None,
     }
@@ -264,12 +285,22 @@ pub struct BatteryHalves {
 
 /// Vendor query for both halves' battery levels.
 pub fn req_battery_halves() -> Packet {
-    packet(&[CMD_CUSTOM_GET_VALUE, ERGOHAVEN_NAMESPACE, ERGOHAVEN_BATTERY_HALVES])
+    packet(&[
+        CMD_CUSTOM_GET_VALUE,
+        ERGOHAVEN_NAMESPACE,
+        ERGOHAVEN_BATTERY_HALVES,
+    ])
 }
 
 /// Reply: byte 3 version, byte 4 flags (bit 0 left known, bit 1 right known), bytes 5/6 percent.
 pub fn parse_battery_halves(reply: &Packet) -> Option<BatteryHalves> {
-    if reply[..3] != [CMD_CUSTOM_GET_VALUE, ERGOHAVEN_NAMESPACE, ERGOHAVEN_BATTERY_HALVES] {
+    if reply[..3]
+        != [
+            CMD_CUSTOM_GET_VALUE,
+            ERGOHAVEN_NAMESPACE,
+            ERGOHAVEN_BATTERY_HALVES,
+        ]
+    {
         return None;
     }
     let flags = reply[4];
@@ -286,7 +317,8 @@ pub fn is_reply_for(request: &Packet, reply: &Packet) -> bool {
     if reply[0] != request[0] {
         return false;
     }
-    !matches!(request[0], CMD_CUSTOM_GET_VALUE | CMD_CUSTOM_SET_VALUE) || reply[1..3] == request[1..3]
+    !matches!(request[0], CMD_CUSTOM_GET_VALUE | CMD_CUSTOM_SET_VALUE)
+        || reply[1..3] == request[1..3]
 }
 
 fn hid(code: u16) -> HidKeyCode {
@@ -303,7 +335,9 @@ pub fn via_keycode_to_action(kc: u16) -> Option<KeyAction> {
         0x0000 => KeyAction::No,
         0x0001 => KeyAction::Transparent,
         0x0002..=0x00FF => KeyAction::Single(Action::Key(KeyCode::Hid(hid(kc)))),
-        0x0100..=0x1FFF => KeyAction::Single(Action::KeyWithModifier(hid(kc & 0xFF), mods(kc >> 8))),
+        0x0100..=0x1FFF => {
+            KeyAction::Single(Action::KeyWithModifier(hid(kc & 0xFF), mods(kc >> 8)))
+        }
         0x2000..=0x3FFF => KeyAction::TapHold(
             Action::Key(KeyCode::Hid(hid(kc & 0xFF))),
             Action::Modifier(mods((kc >> 8) & 0b11111)),
@@ -314,9 +348,10 @@ pub fn via_keycode_to_action(kc: u16) -> Option<KeyAction> {
             Action::LayerOn(layer((kc >> 8) & 0xF)),
             Default::default(),
         ),
-        0x5000..=0x51FF => {
-            KeyAction::Single(Action::LayerOnWithModifier(layer((kc >> 5) & 0xF), mods(kc & 0b11111)))
-        }
+        0x5000..=0x51FF => KeyAction::Single(Action::LayerOnWithModifier(
+            layer((kc >> 5) & 0xF),
+            mods(kc & 0b11111),
+        )),
         0x5200..=0x521F => KeyAction::Single(Action::LayerToggleOnly(layer(kc & 0xF))),
         0x5220..=0x523F => KeyAction::Single(Action::LayerOn(layer(kc & 0xF))),
         0x5240..=0x525F => KeyAction::Single(Action::DefaultLayer(layer(kc & 0xF))),
@@ -378,8 +413,14 @@ mod tests {
     fn layer_requests_match_firmware_protocol() {
         assert_eq!(&req_layer_subscribe(60)[..4], &[0x07, 0xE9, 0x01, 60]);
         assert_eq!(&req_layer_state()[..3], &[0x08, 0xE9, 0x01]);
-        assert_eq!(&req_native_action(2, 1, 4)[..7], &[0x08, 0xE8, 0x03, 0x01, 2, 1, 4]);
-        assert_eq!(&req_next_native_action(0x0105)[..6], &[0x08, 0xE8, 0x04, 0x01, 0x05, 0x01]);
+        assert_eq!(
+            &req_native_action(2, 1, 4)[..7],
+            &[0x08, 0xE8, 0x03, 0x01, 2, 1, 4]
+        );
+        assert_eq!(
+            &req_next_native_action(0x0105)[..6],
+            &[0x08, 0xE8, 0x04, 0x01, 0x05, 0x01]
+        );
     }
 
     #[test]
@@ -396,7 +437,11 @@ mod tests {
     fn via_mod_tap_decodes_to_tap_hold() {
         // MT(LGui, A): packed modifier bit 3 = gui → 0x2000 | 0x0800 | 0x04
         match via_keycode_to_action(0x2804).unwrap() {
-            KeyAction::TapHold(Action::Key(KeyCode::Hid(HidKeyCode::A)), Action::Modifier(m), _) => {
+            KeyAction::TapHold(
+                Action::Key(KeyCode::Hid(HidKeyCode::A)),
+                Action::Modifier(m),
+                _,
+            ) => {
                 assert!(m.left_gui() && !m.left_shift())
             }
             other => panic!("unexpected {other:?}"),
@@ -416,8 +461,14 @@ mod tests {
 
     #[test]
     fn via_layer_keys_decode() {
-        assert_eq!(via_keycode_to_action(0x5221), Some(KeyAction::Single(Action::LayerOn(1))));
-        assert_eq!(via_keycode_to_action(0x5262), Some(KeyAction::Single(Action::LayerToggle(2))));
+        assert_eq!(
+            via_keycode_to_action(0x5221),
+            Some(KeyAction::Single(Action::LayerOn(1)))
+        );
+        assert_eq!(
+            via_keycode_to_action(0x5262),
+            Some(KeyAction::Single(Action::LayerToggle(2)))
+        );
         assert_eq!(
             via_keycode_to_action(0x4104),
             Some(KeyAction::TapHold(
@@ -465,7 +516,10 @@ mod tests {
         let p = req_native_action_set(2, 3, 1, &action).unwrap();
         assert_eq!(&p[..7], &[0x08 - 1, 0xE8, 0x03, 0x01, 2, 3, 1]);
         let len = p[7] as usize;
-        assert_eq!(postcard::from_bytes::<KeyAction>(&p[8..8 + len]).unwrap(), action);
+        assert_eq!(
+            postcard::from_bytes::<KeyAction>(&p[8..8 + len]).unwrap(),
+            action
+        );
     }
 
     #[test]
@@ -474,13 +528,22 @@ mod tests {
         assert_eq!(&p[..4], &[0xFE, 0x0D, 0x04, 1]);
         assert_eq!(&p[4..12], &[0x18, 0, 0x0C, 0, 0, 0, 0, 0]);
         assert_eq!(&p[12..14], &[0x2F, 0]);
-        assert_eq!(action_to_via_keycode(&KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::U)))), Some(0x18));
+        assert_eq!(
+            action_to_via_keycode(&KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::U)))),
+            Some(0x18)
+        );
     }
 
     #[test]
     fn behavior_setting_requests() {
-        assert_eq!(&req_set_behavior_setting(SETTING_PRIOR_IDLE_TIME, 150)[..6], &[0xFE, 0x0B, 0x1B, 0x00, 150, 0]);
-        assert_eq!(&req_get_behavior_setting(SETTING_PERMISSIVE_HOLD)[..4], &[0xFE, 0x0A, 0x16, 0x00]);
+        assert_eq!(
+            &req_set_behavior_setting(SETTING_PRIOR_IDLE_TIME, 150)[..6],
+            &[0xFE, 0x0B, 0x1B, 0x00, 150, 0]
+        );
+        assert_eq!(
+            &req_get_behavior_setting(SETTING_PERMISSIVE_HOLD)[..4],
+            &[0xFE, 0x0A, 0x16, 0x00]
+        );
     }
 
     #[test]
@@ -489,12 +552,22 @@ mod tests {
         let mut r = reply(&[0x08, 0xE8, 0x01, 0x01, 0b11, 85, 72]);
         assert_eq!(
             parse_battery_halves(&r),
-            Some(BatteryHalves { left: Some(85), right: Some(72), left_charging: false, right_charging: false })
+            Some(BatteryHalves {
+                left: Some(85),
+                right: Some(72),
+                left_charging: false,
+                right_charging: false
+            })
         );
         r[4] = 0b01;
         assert_eq!(
             parse_battery_halves(&r),
-            Some(BatteryHalves { left: Some(85), right: None, left_charging: false, right_charging: false })
+            Some(BatteryHalves {
+                left: Some(85),
+                right: None,
+                left_charging: false,
+                right_charging: false
+            })
         );
         assert_eq!(parse_battery_halves(&reply(&[0x08, 0xE8, 0x02])), None);
     }
@@ -503,10 +576,16 @@ mod tests {
     fn battery_reply_carries_charging_bits() {
         let r = reply(&[0x08, 0xE8, 0x01, 1, 0b0000_1111, 85, 40]);
         let b = parse_battery_halves(&r).unwrap();
-        assert_eq!((b.left, b.right, b.left_charging, b.right_charging), (Some(85), Some(40), true, true));
+        assert_eq!(
+            (b.left, b.right, b.left_charging, b.right_charging),
+            (Some(85), Some(40), true, true)
+        );
         let r = reply(&[0x08, 0xE8, 0x01, 1, 0b0000_1010, 85, 40]);
         let b = parse_battery_halves(&r).unwrap();
-        assert_eq!((b.left, b.right, b.left_charging, b.right_charging), (None, Some(40), false, true));
+        assert_eq!(
+            (b.left, b.right, b.left_charging, b.right_charging),
+            (None, Some(40), false, true)
+        );
     }
 
     #[test]
@@ -515,7 +594,10 @@ mod tests {
         assert!(!b.left_charging && !b.right_charging);
         let st = parse_layer_state(&reply(&[0xE9, 0x01, 2, 0, 0x04, 0x00, 1])).unwrap();
         assert!(!st.central_is_right);
-        assert!(!st.peer_link_known, "old firmware says nothing about the other half");
+        assert!(
+            !st.peer_link_known,
+            "old firmware says nothing about the other half"
+        );
         assert_eq!(st.fw_layout, 1);
     }
 
@@ -523,7 +605,10 @@ mod tests {
     fn layer_state_bit7_means_right_half_is_central() {
         let st = parse_layer_state(&reply(&[0xE9, 0x01, 0, 0, 0x01, 0x00, 0x81])).unwrap();
         assert!(st.central_is_right);
-        assert_eq!(st.fw_layout, 1, "the status bits are stripped from the layout byte");
+        assert_eq!(
+            st.fw_layout, 1,
+            "the status bits are stripped from the layout byte"
+        );
     }
 
     #[test]
@@ -532,7 +617,10 @@ mod tests {
         assert!(linked.peer_linked && linked.peer_link_known);
         assert_eq!(linked.fw_layout, 1);
         let offline = parse_layer_state(&reply(&[0xE9, 0x01, 0, 0, 0x01, 0x00, 0x81])).unwrap();
-        assert!(!offline.peer_linked && offline.peer_link_known, "right is central, left offline");
+        assert!(
+            !offline.peer_linked && offline.peer_link_known,
+            "right is central, left offline"
+        );
         let old = parse_layer_state(&reply(&[0xE9, 0x01, 0, 0, 0x01, 0x00, 0x01])).unwrap();
         assert!(!old.peer_link_known, "firmware without the feature");
         assert!(!old.peer_linked);
@@ -540,12 +628,21 @@ mod tests {
 
     #[test]
     fn firmware_build_request_and_reply() {
-        assert_eq!(&req_firmware_build(Side::Right)[..4], &[0x08, 0xE9, 0x03, 1]);
+        assert_eq!(
+            &req_firmware_build(Side::Right)[..4],
+            &[0x08, 0xE9, 0x03, 1]
+        );
         assert_eq!(&req_firmware_build(Side::Left)[..4], &[0x08, 0xE9, 0x03, 0]);
         let mut r = reply(&[0xE9, 0x03, 1, 5]);
         r[4..9].copy_from_slice(b"v0.2.");
-        assert_eq!(parse_firmware_build(&r), Some((Side::Right, "v0.2.".to_string())));
-        assert_eq!(parse_firmware_build(&reply(&[0xE9, 0x03, 0, 0])), Some((Side::Left, String::new())));
+        assert_eq!(
+            parse_firmware_build(&r),
+            Some((Side::Right, "v0.2.".to_string()))
+        );
+        assert_eq!(
+            parse_firmware_build(&reply(&[0xE9, 0x03, 0, 0])),
+            Some((Side::Left, String::new()))
+        );
         assert_eq!(parse_firmware_build(&reply(&[0xE9, 0x01, 0, 0])), None);
     }
 

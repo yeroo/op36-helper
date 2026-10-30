@@ -80,7 +80,11 @@ fn display(text: &str) -> String {
         (Some(c), None) if c.is_alphabetic() => {
             // Keycap style: one letter, upper case. Letters whose upper case is longer (ß → SS) stay.
             let up: String = c.to_uppercase().collect();
-            if up.chars().count() == 1 { up } else { text.to_string() }
+            if up.chars().count() == 1 {
+                up
+            } else {
+                text.to_string()
+            }
         }
         _ => text.to_string(),
     }
@@ -101,7 +105,9 @@ fn char_legend(
     let shift = implicit_shift || ctx.mods.shift;
     if ctx.mods.ctrl || ctx.mods.alt || ctx.mods.win {
         // Rule 6: shortcuts work on the Latin key whatever the language.
-        return chars.char_for(en, sc, implicit_shift).map(|c| Legend::text(display(&c), None));
+        return chars
+            .char_for(en, sc, implicit_shift)
+            .map(|c| Legend::text(display(&c), None));
     }
     let primary = chars.char_for(ctx.hkl, sc, shift)?;
     if ctx.mods.shift {
@@ -131,7 +137,12 @@ fn char_legend(
     Some(legend)
 }
 
-fn hid_legend(h: HidKeyCode, implicit: ModifierCombination, ctx: &LegendCtx, chars: &dyn CharSource) -> Legend {
+fn hid_legend(
+    h: HidKeyCode,
+    implicit: ModifierCombination,
+    ctx: &LegendCtx,
+    chars: &dyn CharSource,
+) -> Legend {
     let usage = h as u16 as u8;
     if is_modifier_usage(usage) {
         return Legend::text(label_for_hid(h).unwrap_or("Mod"), None);
@@ -210,7 +221,7 @@ pub fn legend_for(
 
 #[cfg(test)]
 mod tests {
-    use super::chars::{FakeCharSource, EN, RU};
+    use super::chars::{EN, FakeCharSource, RU};
     use super::hid_table::{ScanCode, hid_to_scancode, scancode_to_hid};
 
     #[test]
@@ -239,7 +250,10 @@ mod tests {
     }
 
     fn shifted(h: HidKeyCode) -> KeyAction {
-        KeyAction::Single(Action::KeyWithModifier(h, ModifierCombination::from_packed_bits(0b00010)))
+        KeyAction::Single(Action::KeyWithModifier(
+            h,
+            ModifierCombination::from_packed_bits(0b00010),
+        ))
     }
 
     fn legend(action: KeyAction, c: LegendCtx) -> Legend {
@@ -264,7 +278,10 @@ mod tests {
         let l = legend(key(HidKeyCode::Semicolon), ctx(EN, Modifiers::default(), 0));
         assert_eq!(l.primary, ";");
         assert_eq!(l.secondary.as_deref(), Some(":"));
-        assert!(!l.secondary_is_hint, "a Shift variant is stacked, not a corner hint");
+        assert!(
+            !l.secondary_is_hint,
+            "a Shift variant is stacked, not a corner hint"
+        );
     }
 
     #[test]
@@ -272,7 +289,10 @@ mod tests {
         let mut c = ctx(RU, Modifiers::default(), 1);
         c.show_en_hint = false;
         let l = legend(key(HidKeyCode::Kc3), c); // Nav layer digit: № over 3 in Russian
-        assert_eq!((l.primary.as_str(), l.secondary.as_deref()), ("3", Some("№")));
+        assert_eq!(
+            (l.primary.as_str(), l.secondary.as_deref()),
+            ("3", Some("№"))
+        );
         assert!(!l.secondary_is_hint);
         let l = legend(key(HidKeyCode::Q), c);
         assert_eq!((l.primary.as_str(), l.secondary), ("Й", None));
@@ -296,14 +316,31 @@ mod tests {
     fn shift_held_swaps_primary() {
         let l = legend(
             key(HidKeyCode::Semicolon),
-            ctx(EN, Modifiers { shift: true, ..Default::default() }, 0),
+            ctx(
+                EN,
+                Modifiers {
+                    shift: true,
+                    ..Default::default()
+                },
+                0,
+            ),
         );
         assert_eq!((l.primary.as_str(), l.secondary), (":", None));
     }
 
     #[test]
     fn ctrl_held_shows_en_letters() {
-        let l = legend(key(HidKeyCode::Q), ctx(RU, Modifiers { ctrl: true, ..Default::default() }, 0));
+        let l = legend(
+            key(HidKeyCode::Q),
+            ctx(
+                RU,
+                Modifiers {
+                    ctrl: true,
+                    ..Default::default()
+                },
+                0,
+            ),
+        );
         assert_eq!((l.primary.as_str(), l.secondary), ("Q", None));
     }
 
@@ -322,21 +359,36 @@ mod tests {
     #[test]
     fn layer_key_marks_kind() {
         let a = KeyAction::Single(Action::LayerOn(1));
-        assert_eq!(legend(a.clone(), ctx(EN, Modifiers::default(), 0)).kind, KeyKind::LayerKey(1));
-        assert_eq!(legend(a, ctx(EN, Modifiers::default(), 1)).kind, KeyKind::HeldLayer);
+        assert_eq!(
+            legend(a.clone(), ctx(EN, Modifiers::default(), 0)).kind,
+            KeyKind::LayerKey(1)
+        );
+        assert_eq!(
+            legend(a, ctx(EN, Modifiers::default(), 1)).kind,
+            KeyKind::HeldLayer
+        );
     }
 
     #[test]
     fn transparent_and_no_render_empty() {
         let l = legend(KeyAction::No, ctx(EN, Modifiers::default(), 0));
         assert_eq!((l.kind, l.primary.as_str()), (KeyKind::Empty, ""));
-        assert_eq!(legend(KeyAction::Transparent, ctx(EN, Modifiers::default(), 0)).kind, KeyKind::Empty);
+        assert_eq!(
+            legend(KeyAction::Transparent, ctx(EN, Modifiers::default(), 0)).kind,
+            KeyKind::Empty
+        );
     }
 
     #[test]
     fn home_row_key_kind_is_home() {
         let c = ctx(EN, Modifiers::default(), 0);
-        let l = legend_for(&key(HidKeyCode::A), 0, &OP36_KEYS[10], &c, &FakeCharSource::default());
+        let l = legend_for(
+            &key(HidKeyCode::A),
+            0,
+            &OP36_KEYS[10],
+            &c,
+            &FakeCharSource::default(),
+        );
         assert_eq!(l.kind, KeyKind::Home);
     }
 
@@ -344,7 +396,10 @@ mod tests {
     fn non_printing_keys_use_labels() {
         let l = legend(key(HidKeyCode::Backspace), ctx(RU, Modifiers::default(), 0));
         assert_eq!((l.primary.as_str(), l.secondary), ("Bksp", None));
-        let l = legend(KeyAction::Single(Action::User(2)), ctx(EN, Modifiers::default(), 3));
+        let l = legend(
+            KeyAction::Single(Action::User(2)),
+            ctx(EN, Modifiers::default(), 3),
+        );
         assert_eq!(l.primary, "BT 2");
         let l = legend(key(HidKeyCode::LGui), ctx(EN, Modifiers::default(), 3));
         assert_eq!(l.primary, "Win");
@@ -356,7 +411,13 @@ mod tests {
         let mut chars = FakeCharSource::default();
         chars.map.insert((de, 0x15, false), "z");
         chars.map.insert((de, 0x15, true), "Z");
-        let l = legend_for(&key(HidKeyCode::Y), 0, &OP36_KEYS[5], &ctx(de, Modifiers::default(), 0), &chars);
+        let l = legend_for(
+            &key(HidKeyCode::Y),
+            0,
+            &OP36_KEYS[5],
+            &ctx(de, Modifiers::default(), 0),
+            &chars,
+        );
         assert_eq!(l.primary, "Z");
         assert_eq!(l.secondary.as_deref(), Some("Y"));
     }
@@ -368,12 +429,48 @@ mod tests {
 
     #[test]
     fn hid_table_round_trips_letters_and_arrows() {
-        assert_eq!(hid_to_scancode(0x04), Some(ScanCode { code: 0x1E, extended: false }));
-        assert_eq!(scancode_to_hid(ScanCode { code: 0x1E, extended: false }), Some(0x04));
-        assert_eq!(hid_to_scancode(0x50), Some(ScanCode { code: 0x4B, extended: true }));
-        assert_eq!(scancode_to_hid(ScanCode { code: 0x4B, extended: true }), Some(0x50));
-        assert_eq!(scancode_to_hid(ScanCode { code: 0x4B, extended: false }), Some(0x5C)); // keypad 4
-        assert_eq!(hid_to_scancode(0xE3), Some(ScanCode { code: 0x5B, extended: true })); // left win
+        assert_eq!(
+            hid_to_scancode(0x04),
+            Some(ScanCode {
+                code: 0x1E,
+                extended: false
+            })
+        );
+        assert_eq!(
+            scancode_to_hid(ScanCode {
+                code: 0x1E,
+                extended: false
+            }),
+            Some(0x04)
+        );
+        assert_eq!(
+            hid_to_scancode(0x50),
+            Some(ScanCode {
+                code: 0x4B,
+                extended: true
+            })
+        );
+        assert_eq!(
+            scancode_to_hid(ScanCode {
+                code: 0x4B,
+                extended: true
+            }),
+            Some(0x50)
+        );
+        assert_eq!(
+            scancode_to_hid(ScanCode {
+                code: 0x4B,
+                extended: false
+            }),
+            Some(0x5C)
+        ); // keypad 4
+        assert_eq!(
+            hid_to_scancode(0xE3),
+            Some(ScanCode {
+                code: 0x5B,
+                extended: true
+            })
+        ); // left win
         assert_eq!(hid_to_scancode(0x02), None);
     }
 }

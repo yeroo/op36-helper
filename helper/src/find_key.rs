@@ -34,7 +34,12 @@ fn produced_key(action: &KeyAction) -> Option<(u8, bool)> {
         Action::Key(KeyCode::Hid(h)) => Some((*h as u16 as u8, false)),
         Action::KeyWithModifier(h, m) => {
             let shift = m.left_shift() || m.right_shift();
-            let others = m.left_ctrl() || m.right_ctrl() || m.left_alt() || m.right_alt() || m.left_gui() || m.right_gui();
+            let others = m.left_ctrl()
+                || m.right_ctrl()
+                || m.left_alt()
+                || m.right_alt()
+                || m.left_gui()
+                || m.right_gui();
             (!others).then_some((*h as u16 as u8, shift))
         }
         _ => None,
@@ -47,7 +52,9 @@ pub fn search(keymap: &Keymap, q: FindQuery, active_layer: u8) -> Vec<Candidate>
     let mut out = Vec::new();
     for layer in 0..keymap.layers {
         for key in OP36_KEYS.iter() {
-            let Some((hid, implicit_shift)) = produced_key(&keymap.action(layer, key)) else { continue };
+            let Some((hid, implicit_shift)) = produced_key(&keymap.action(layer, key)) else {
+                continue;
+            };
             if hid != q.hid {
                 continue;
             }
@@ -88,7 +95,8 @@ pub fn layer_path(keymap: &Keymap, target: u8) -> Vec<(u8, u8)> {
         for key in OP36_KEYS.iter() {
             let (_, action) = keymap.resolve(mask, 0, key);
             let next = match action {
-                KeyAction::Single(Action::LayerOn(n)) | KeyAction::Single(Action::LayerOnWithModifier(n, _)) => n,
+                KeyAction::Single(Action::LayerOn(n))
+                | KeyAction::Single(Action::LayerOnWithModifier(n, _)) => n,
                 KeyAction::TapHold(_, Action::LayerOn(n), _) => n,
                 _ => continue,
             };
@@ -124,24 +132,37 @@ fn key_label(hid: u8, shift: bool, hkl: Hkl, chars: &dyn CharSource) -> String {
             }
         });
     from_chars
-        .or_else(|| HidKeyCode::from_repr(hid).and_then(label_for_hid).map(str::to_string))
+        .or_else(|| {
+            HidKeyCode::from_repr(hid)
+                .and_then(label_for_hid)
+                .map(str::to_string)
+        })
         .unwrap_or_else(|| format!("{hid:#04x}"))
 }
 
 /// The chip sequence for one candidate: layer keys, an optional Shift, then the key itself.
 pub fn recipe(keymap: &Keymap, c: &Candidate, hid: u8, hkl: Hkl, chars: &dyn CharSource) -> Recipe {
-    let mut chips: Vec<Chip> = layer_path(keymap, c.layer).into_iter().map(|(_, to)| Chip::Layer(to)).collect();
+    let mut chips: Vec<Chip> = layer_path(keymap, c.layer)
+        .into_iter()
+        .map(|(_, to)| Chip::Layer(to))
+        .collect();
     if c.needs_shift {
         chips.push(Chip::Mod("⇧"));
     }
-    chips.push(Chip::Key(key_label(hid, c.needs_shift || c.implicit_shift, hkl, chars), c.layer));
+    chips.push(Chip::Key(
+        key_label(hid, c.needs_shift || c.implicit_shift, hkl, chars),
+        c.layer,
+    ));
     Recipe { chips }
 }
 
 /// Recipe shown when nothing produces the key.
 pub fn not_found_recipe(hid: u8, shift: bool, hkl: Hkl, chars: &dyn CharSource) -> Recipe {
     Recipe {
-        chips: vec![Chip::Key(key_label(hid, shift, hkl, chars), 0), Chip::Text("not on OP36".into())],
+        chips: vec![
+            Chip::Key(key_label(hid, shift, hkl, chars), 0),
+            Chip::Text("not on OP36".into()),
+        ],
     }
 }
 
@@ -160,30 +181,82 @@ mod tests {
     #[test]
     fn find_equals_points_to_symbols_layer() {
         // The RMK factory keymap has no '[' at all (the ZMK-era pictures did); '=' lives on Symbols.
-        let c = search(&factory(), FindQuery { hid: 0x2E, shift: false }, 0);
-        assert_eq!((c[0].layer, c[0].key_index, c[0].needs_shift), (2, 2, false));
-        assert!(search(&factory(), FindQuery { hid: 0x2F, shift: false }, 0).is_empty());
+        let c = search(
+            &factory(),
+            FindQuery {
+                hid: 0x2E,
+                shift: false,
+            },
+            0,
+        );
+        assert_eq!(
+            (c[0].layer, c[0].key_index, c[0].needs_shift),
+            (2, 2, false)
+        );
+        assert!(
+            search(
+                &factory(),
+                FindQuery {
+                    hid: 0x2F,
+                    shift: false
+                },
+                0
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     fn find_ranks_exact_before_shifted() {
         // ':' = Semicolon + Shift. Symbols layer has SHIFTED(Semicolon) at position 22; the base
         // layer ';' (19) and the Symbols-layer ';' (17) need an extra Shift.
-        let c = search(&factory(), FindQuery { hid: 0x33, shift: true }, 0);
-        assert_eq!((c[0].layer, c[0].key_index, c[0].implicit_shift, c[0].needs_shift), (2, 22, true, false));
-        assert_eq!((c[1].layer, c[1].key_index, c[1].needs_shift), (0, 19, true));
+        let c = search(
+            &factory(),
+            FindQuery {
+                hid: 0x33,
+                shift: true,
+            },
+            0,
+        );
+        assert_eq!(
+            (
+                c[0].layer,
+                c[0].key_index,
+                c[0].implicit_shift,
+                c[0].needs_shift
+            ),
+            (2, 22, true, false)
+        );
+        assert_eq!(
+            (c[1].layer, c[1].key_index, c[1].needs_shift),
+            (0, 19, true)
+        );
         assert!(c.len() <= 3);
     }
 
     #[test]
     fn find_on_active_layer_first() {
-        let c = search(&factory(), FindQuery { hid: 0x1E, shift: false }, 1); // '1'
+        let c = search(
+            &factory(),
+            FindQuery {
+                hid: 0x1E,
+                shift: false,
+            },
+            1,
+        ); // '1'
         assert_eq!((c[0].layer, c[0].key_index), (1, 0));
     }
 
     #[test]
     fn find_a_on_base_layer_is_the_home_row_mod_tap() {
-        let c = search(&factory(), FindQuery { hid: 0x04, shift: false }, 0);
+        let c = search(
+            &factory(),
+            FindQuery {
+                hid: 0x04,
+                shift: false,
+            },
+            0,
+        );
         assert_eq!((c[0].layer, c[0].key_index), (0, 10));
     }
 
@@ -200,7 +273,12 @@ mod tests {
     #[test]
     fn recipe_for_layer3_lists_both_thumbs() {
         let km = factory();
-        let c = Candidate { layer: 3, key_index: 1, needs_shift: false, implicit_shift: false };
+        let c = Candidate {
+            layer: 3,
+            key_index: 1,
+            needs_shift: false,
+            implicit_shift: false,
+        };
         let r = recipe(&km, &c, 0x3A, EN, &FakeCharSource::default()); // F1
         assert_eq!(&r.chips[..2], &[Chip::Layer(1), Chip::Layer(3)]);
         assert_eq!(r.chips[2], Chip::Key("F1".into(), 3));
@@ -209,8 +287,19 @@ mod tests {
     #[test]
     fn recipe_adds_shift_chip_and_language_label() {
         let km = factory();
-        let c = Candidate { layer: 0, key_index: 19, needs_shift: true, implicit_shift: false };
-        let r = recipe(&km, &c, 0x33, crate::legend::chars::RU, &FakeCharSource::default());
+        let c = Candidate {
+            layer: 0,
+            key_index: 19,
+            needs_shift: true,
+            implicit_shift: false,
+        };
+        let r = recipe(
+            &km,
+            &c,
+            0x33,
+            crate::legend::chars::RU,
+            &FakeCharSource::default(),
+        );
         assert_eq!(r.chips, vec![Chip::Mod("⇧"), Chip::Key("Ж".into(), 0)]);
     }
 
@@ -228,7 +317,10 @@ mod tests {
         let find = m.find.clone().expect("find result");
         assert_eq!(find.candidates[0].key_index, 2);
         let f = m.frame(&FakeCharSource::default());
-        assert!(f.keys[2].halo && f.keys[34].halo, "key and its layer thumb get the halo");
+        assert!(
+            f.keys[2].halo && f.keys[34].halo,
+            "key and its layer thumb get the halo"
+        );
         assert_eq!(f.keys[2].color_layer, 2);
         assert_eq!(f.recipes.len(), 1);
         m.apply(ModelEvent::FindExpired);
@@ -263,6 +355,8 @@ mod tests {
         let f = m.frame(&FakeCharSource::default());
         assert_eq!(f.recipes.len(), 1);
         assert!(matches!(f.recipes[0].chips.last(), Some(Chip::Text(t)) if t == "not on OP36"));
-        let _ = m.apply(ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Usb)));
+        let _ = m.apply(ModelEvent::Hid(HidEvent::Connected(
+            crate::vial::transport::Transport::Usb,
+        )));
     }
 }

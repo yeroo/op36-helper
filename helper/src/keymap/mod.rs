@@ -51,7 +51,12 @@ impl Keymap {
     /// Resolve what `key` does given the active-layer bitmask and the default layer:
     /// the highest active layer whose action is not `Transparent`, falling back to the default
     /// layer; a `Transparent` default resolves to `No`. Returns `(layer it came from, action)`.
-    pub fn resolve(&self, active_mask: u16, default_layer: u8, key: &PhysicalKey) -> (u8, KeyAction) {
+    pub fn resolve(
+        &self,
+        active_mask: u16,
+        default_layer: u8,
+        key: &PhysicalKey,
+    ) -> (u8, KeyAction) {
         for layer in (0..self.layers.min(16)).rev() {
             let active = active_mask & (1 << layer) != 0 || layer == default_layer;
             if !active {
@@ -117,21 +122,40 @@ mod tests {
     fn highest_active_layer_wins() {
         let mut km = Keymap::empty(6, 6, 4);
         km.set(0, 0, 4, q());
-        km.set(1, 0, 4, KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::Kc1))));
-        km.set(2, 0, 4, KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::LeftBracket))));
+        km.set(
+            1,
+            0,
+            4,
+            KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::Kc1))),
+        );
+        km.set(
+            2,
+            0,
+            4,
+            KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::LeftBracket))),
+        );
         let (from, a) = km.resolve(0b0110, 0, key_at(0, 4).unwrap());
         assert_eq!(from, 2);
-        assert_eq!(a, KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::LeftBracket))));
+        assert_eq!(
+            a,
+            KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::LeftBracket)))
+        );
     }
 
     #[test]
     fn no_stays_no_and_transparent_on_default_is_no() {
         let mut km = Keymap::empty(6, 6, 4);
         km.set(1, 0, 4, KeyAction::No);
-        assert_eq!(km.resolve(0b0010, 0, key_at(0, 4).unwrap()), (1, KeyAction::No));
+        assert_eq!(
+            km.resolve(0b0010, 0, key_at(0, 4).unwrap()),
+            (1, KeyAction::No)
+        );
         km.set(0, 0, 4, KeyAction::Transparent);
         km.set(1, 0, 4, KeyAction::Transparent);
-        assert_eq!(km.resolve(0b0010, 0, key_at(0, 4).unwrap()), (0, KeyAction::No));
+        assert_eq!(
+            km.resolve(0b0010, 0, key_at(0, 4).unwrap()),
+            (0, KeyAction::No)
+        );
     }
 
     #[test]

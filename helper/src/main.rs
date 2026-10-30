@@ -17,14 +17,16 @@ mod theme;
 mod tray;
 mod update;
 mod update_thread;
-mod vial;
 mod version;
+mod vial;
 mod win;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{
+    ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, WPARAM,
+};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{HOT_KEY_MODIFIERS, RegisterHotKey};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -35,24 +37,27 @@ use windows::core::{PCWSTR, w};
 
 use input::language::{LanguageWatcher, TIMER_LANG};
 use input::modifiers::{ModTracker, is_modifier_vk};
-use legend::hid_table::scancode_to_hid;
 use legend::chars::WinCharSource;
+use legend::hid_table::scancode_to_hid;
 use model::{KeyPress, Model, ModelEvent};
 use options::dialog::{DialogAction, FirmwareView, OptionsDialog};
-use settings::NUDGE_PX;
-use overlay::frame::Frame;
 use overlay::appbar::{AppBar, WM_APP_APPBAR, edge_for};
+use overlay::frame::Frame;
 use overlay::placement::{chosen_monitor, monitors, place_with_reserved};
 use overlay::render_d2d::Renderer;
 use overlay::window::OverlayWindow;
+use settings::NUDGE_PX;
 use settings::Settings;
 use tray::{Tray, TrayCmd};
-use win::msgwindow::{CLASS_NAME, MsgWindow, WM_APP_FLASH, WM_APP_HID, WM_APP_LANG, WM_APP_TOGGLE, WM_APP_TRAY, WM_APP_UPDATE};
 use update_thread::{UpdateCmd, UpdateEvent};
+use win::msgwindow::{
+    self, CLASS_NAME, MsgWindow, SystemRequest, WM_APP_FLASH, WM_APP_HID, WM_APP_LANG,
+    WM_APP_TOGGLE, WM_APP_TRAY, WM_APP_UPDATE,
+};
 use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
 use windows::Win32::UI::WindowsAndMessaging::{
-    IsDialogMessageW, KillTimer, RegisterWindowMessageW, SetTimer, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_INPUT,
-    WM_SETTINGCHANGE, WM_TIMER,
+    IsDialogMessageW, KillTimer, RegisterWindowMessageW, SetTimer, WM_DISPLAYCHANGE, WM_DPICHANGED,
+    WM_INPUT, WM_SETTINGCHANGE, WM_TIMER,
 };
 
 /// Timer id for the periodic "stay on top" nudge.
@@ -75,7 +80,10 @@ const HOTKEY_ID: i32 = 1;
 /// Milliseconds since the first call (the model's clock for the switching timeout).
 fn uptime_ms() -> u64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    START.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
 }
 
 /// Arrow nudge hotkeys: Left, Up, Right, Down.
@@ -107,7 +115,10 @@ fn init_logging() {
     use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
     // Keep one rotated backup so the log never grows past ~1 MB.
     let path = paths::log_file();
-    if std::fs::metadata(&path).map(|m| m.len() > LOG_ROTATE_BYTES).unwrap_or(false) {
+    if std::fs::metadata(&path)
+        .map(|m| m.len() > LOG_ROTATE_BYTES)
+        .unwrap_or(false)
+    {
         let _ = std::fs::rename(&path, path.with_extension("1.txt"));
     }
     let file = std::fs::OpenOptions::new()
@@ -169,11 +180,24 @@ fn register_hotkeys(hwnd: HWND, settings: &Settings) -> Vec<String> {
             let _ = UnregisterHotKey(Some(hwnd), id);
         }
         let hk = settings.hotkey;
-        if let Err(e) = RegisterHotKey(Some(hwnd), HOTKEY_ID, HOT_KEY_MODIFIERS(hk.modifiers), hk.vk) {
-            errors.push(format!("toggle hotkey {} unavailable: {e}", options::hotkey_label(&hk)));
+        if let Err(e) = RegisterHotKey(
+            Some(hwnd),
+            HOTKEY_ID,
+            HOT_KEY_MODIFIERS(hk.modifiers),
+            hk.vk,
+        ) {
+            errors.push(format!(
+                "toggle hotkey {} unavailable: {e}",
+                options::hotkey_label(&hk)
+            ));
         }
         for (i, vk) in NUDGE_VKS.iter().enumerate() {
-            if let Err(e) = RegisterHotKey(Some(hwnd), HOTKEY_NUDGE_BASE + i as i32, HOT_KEY_MODIFIERS(settings.move_hotkey_mods), *vk) {
+            if let Err(e) = RegisterHotKey(
+                Some(hwnd),
+                HOTKEY_NUDGE_BASE + i as i32,
+                HOT_KEY_MODIFIERS(settings.move_hotkey_mods),
+                *vk,
+            ) {
                 errors.push(format!("nudge hotkey (arrow {i}) unavailable: {e}"));
             }
         }
@@ -196,7 +220,10 @@ impl App {
 
     /// Current reservation as `(monitor name, thickness)` for placement.
     fn reserved(&self) -> Option<(String, i32)> {
-        self.appbar.current.as_ref().map(|(n, _, t)| (n.clone(), *t))
+        self.appbar
+            .current
+            .as_ref()
+            .map(|(n, _, t)| (n.clone(), *t))
     }
 
     /// Keep the app-bar reservation in line with settings, visibility and overlay size.
@@ -208,7 +235,8 @@ impl App {
         }
         let mon = chosen_monitor(&self.settings, mons);
         let thickness = size.1 + self.settings.offset.1.max(0);
-        self.appbar.reserve(&mon.name, mon.monitor_rect, edge.unwrap(), thickness);
+        self.appbar
+            .reserve(&mon.name, mon.monitor_rect, edge.unwrap(), thickness);
     }
 
     /// Recompute the frame; render, place and present only when something changed.
@@ -239,7 +267,11 @@ impl App {
         }
         match self.renderer.render(&frame, scale, self.settings.opacity) {
             Ok(bitmap) => {
-                log::debug!("rendered {}x{}, scale {scale:.2}, dark {dark}", bitmap.width, bitmap.height);
+                log::debug!(
+                    "rendered {}x{}, scale {scale:.2}, dark {dark}",
+                    bitmap.width,
+                    bitmap.height
+                );
                 self.update_appbar((bitmap.width, bitmap.height), &mons);
                 let reserved = self.reserved();
                 let (x, y, _) = place_with_reserved(
@@ -260,7 +292,9 @@ impl App {
     }
 
     fn on_raw_input(&mut self, lparam: LPARAM) {
-        let Some(key) = input::raw_input::parse(lparam) else { return };
+        let Some(key) = input::raw_input::parse(lparam) else {
+            return;
+        };
         let before = self.mods.current();
         let after = self.mods.apply(&key);
         if after != before {
@@ -285,7 +319,10 @@ impl App {
             }
         }
         if let Some(hkl) = self.language.as_mut().and_then(|w| w.poll()) {
-            log::info!("language: {} ({hkl:#x})", input::language::primary_lang_tag(hkl));
+            log::info!(
+                "language: {} ({hkl:#x})",
+                input::language::primary_lang_tag(hkl)
+            );
             self.on_model_event(ModelEvent::Language(hkl));
         }
     }
@@ -324,7 +361,14 @@ impl App {
                 }
             }
             let t = uptime_ms() as f64;
-            log::debug!("key: t={t:.1}ms hid={:?} sc={:#x}{} mods={:?} from {:?}", k.hid, k.scancode, if k.extended { "e" } else { "" }, k.mods_at_press, k.device);
+            log::debug!(
+                "key: t={t:.1}ms hid={:?} sc={:#x}{} mods={:?} from {:?}",
+                k.hid,
+                k.scancode,
+                if k.extended { "e" } else { "" },
+                k.mods_at_press,
+                k.device
+            );
         }
         if let ModelEvent::Mods(m) = &event {
             log::debug!("mods: {m:?}");
@@ -389,7 +433,11 @@ impl App {
                 errors.push(format!("save: {e}"));
             }
         }
-        if errors.is_empty() { Ok(()) } else { Err(errors.join("\n")) }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("\n"))
+        }
     }
 
     /// "Only while held": show at once when wanted, hide one second after nothing is held.
@@ -474,8 +522,12 @@ impl App {
         let word = |reported: &Option<String>| match &bundle {
             None => reported.clone().unwrap_or_else(|| "unknown".to_string()),
             Some(b) => match half_status(reported.as_deref(), &b.build) {
-                HalfStatus::UpToDate => format!("{} (up to date)", reported.as_deref().unwrap_or("")),
-                HalfStatus::UpdateAvailable => format!("{} (update available)", reported.as_deref().unwrap_or("")),
+                HalfStatus::UpToDate => {
+                    format!("{} (up to date)", reported.as_deref().unwrap_or(""))
+                }
+                HalfStatus::UpdateAvailable => {
+                    format!("{} (update available)", reported.as_deref().unwrap_or(""))
+                }
                 HalfStatus::Unknown => "unknown — flash both halves".to_string(),
             },
         };
@@ -488,7 +540,11 @@ impl App {
                 let first = firmware::first_to_flash(left.as_deref(), right.as_deref(), &b.build);
                 note.push_str(&format!(
                     "Flash the {} half first, then the other one.",
-                    if first == vial::protocol::Side::Left { "left" } else { "right" }
+                    if first == vial::protocol::Side::Left {
+                        "left"
+                    } else {
+                        "right"
+                    }
                 ));
             }
         }
@@ -517,9 +573,14 @@ impl App {
         let line = match &event {
             UpdateEvent::Available(v) => format!("Helper {} — {v} available", version::VERSION),
             UpdateEvent::UpToDate => format!("Helper {} — up to date", version::VERSION),
-            UpdateEvent::CheckFailed => format!("Helper {} — update check failed (offline?)", version::VERSION),
+            UpdateEvent::CheckFailed => format!(
+                "Helper {} — update check failed (offline?)",
+                version::VERSION
+            ),
             UpdateEvent::Downloading(v) => format!("Downloading {v}…"),
-            UpdateEvent::Verified { .. } => "Verified; restarting into the new version…".to_string(),
+            UpdateEvent::Verified { .. } => {
+                "Verified; restarting into the new version…".to_string()
+            }
             UpdateEvent::Failed(e) => format!("Update failed: {e}"),
         };
         log::info!("update: {line}");
@@ -534,28 +595,55 @@ impl App {
                     if let Some(tray) = self.tray.as_mut() {
                         tray.balloon(
                             "OP36 Helper",
-                            &format!("{v} is out (you have {}). Options → Update now.", version::VERSION),
+                            &format!(
+                                "{v} is out (you have {}). Options → Update now.",
+                                version::VERSION
+                            ),
                         );
                     }
                 }
                 self.update_latest = Some(v);
             }
             UpdateEvent::UpToDate => self.update_latest = None,
-            UpdateEvent::Verified { payload, helper, channel } => self.exit_for_update(payload, helper, channel),
+            UpdateEvent::Verified {
+                payload,
+                helper,
+                channel,
+            } => self.exit_for_update(payload, helper, channel),
             _ => {}
         }
     }
 
     /// Start the detached apply script, then quit: the script waits for this process, installs,
     /// and relaunches the same exe path.
-    fn exit_for_update(&mut self, payload: std::path::PathBuf, helper: std::path::PathBuf, channel: update::Channel) {
-        let Ok(exe) = std::env::current_exe() else { return };
+    fn exit_for_update(
+        &mut self,
+        payload: std::path::PathBuf,
+        helper: std::path::PathBuf,
+        channel: update::Channel,
+    ) {
+        let Ok(exe) = std::env::current_exe() else {
+            return;
+        };
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let started = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-WindowStyle",
+                "Hidden",
+                "-File",
+            ])
             .arg(&helper)
-            .args(["-ProcId", &std::process::id().to_string(), "-Channel", channel.script_name(), "-Payload"])
+            .args([
+                "-ProcId",
+                &std::process::id().to_string(),
+                "-Channel",
+                channel.script_name(),
+                "-Payload",
+            ])
             .arg(&payload)
             .arg("-Exe")
             .arg(&exe)
@@ -599,7 +687,9 @@ impl App {
 
     /// A step from the flash thread: show it; a final step frees the buttons again.
     fn on_flash_step(&mut self, step: firmware::FlashStep) {
-        let Some(side) = self.flash.as_ref().map(|(side, _)| *side) else { return };
+        let Some(side) = self.flash.as_ref().map(|(side, _)| *side) else {
+            return;
+        };
         let done = step.is_final();
         log::info!("flash: {:?} half: {:?}", side, step);
         if let Some(dlg) = &self.options {
@@ -658,7 +748,11 @@ fn write_taphold_settings(t: &mut vial::transport::HidTransport) -> Result<(), S
         (SETTING_PERMISSIVE_HOLD, 1u16, "permissive hold"),
         (SETTING_UNILATERAL_TAP, 1, "unilateral tap"),
         (SETTING_MORSE_TIMEOUT, 280, "hold timeout ms"),
-        (SETTING_PRIOR_IDLE_TIME, keymap::zmk_layout::ZMK_PRIOR_IDLE_MS, "prior idle ms"),
+        (
+            SETTING_PRIOR_IDLE_TIME,
+            keymap::zmk_layout::ZMK_PRIOR_IDLE_MS,
+            "prior idle ms",
+        ),
     ];
     for (key, value, name) in settings {
         let req = req_set_behavior_setting(key, value);
@@ -670,12 +764,18 @@ fn write_taphold_settings(t: &mut vial::transport::HidTransport) -> Result<(), S
                 // The firmware echoes the request for the tap-hold keys and answers 0 for device settings.
                 Some(pkt) if pkt[0] == 0 || pkt[..4] == req[..4] => break,
                 Some(pkt) => return Err(format!("{name}: keyboard replied {:02x?}", &pkt[..4])),
-                None if std::time::Instant::now() > deadline => return Err(format!("{name}: no reply")),
+                None if std::time::Instant::now() > deadline => {
+                    return Err(format!("{name}: no reply"));
+                }
                 None => continue,
             }
         }
         let reply = vial::reader::request_vial_setting(t, key)?;
-        let now = if value <= 1 { reply[1] as u16 } else { u16::from_le_bytes([reply[1], reply[2]]) };
+        let now = if value <= 1 {
+            reply[1] as u16
+        } else {
+            u16::from_le_bytes([reply[1], reply[2]])
+        };
         println!("{name}: wrote {value}, keyboard now reports {now}");
         std::thread::sleep(std::time::Duration::from_millis(30));
     }
@@ -694,7 +794,8 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
             return Err("op36-helper is running: exit it from the tray first, the CLI needs the keyboard to itself".into());
         }
         let api = hidapi::HidApi::new().map_err(|e| e.to_string())?;
-        HidTransport::open(&api).ok_or_else(|| "OP36 Vial interface not found (keyboard on USB?)".to_string())
+        HidTransport::open(&api)
+            .ok_or_else(|| "OP36 Vial interface not found (keyboard on USB?)".to_string())
     };
     match args.first().map(String::as_str) {
         Some("--dump-keymap") => Some((|| {
@@ -703,16 +804,28 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
             let km = read_keymap(&mut t, 6, 6)?;
             std::fs::write(path, km.to_bytes()).map_err(|e| e.to_string())?;
             for layer in 0..km.layers {
-                let non_empty = keymap::OP36_KEYS.iter().any(|k| km.action(layer, k) != keymap::KeyAction::No);
+                let non_empty = keymap::OP36_KEYS
+                    .iter()
+                    .any(|k| km.action(layer, k) != keymap::KeyAction::No);
                 if !non_empty {
                     continue;
                 }
                 println!("layer {layer} ({})", km.layer_name(layer));
                 for k in keymap::OP36_KEYS.iter() {
-                    println!("  {:>2} (r{} c{}): {:?}", k.index, k.row, k.col, km.action(layer, k));
+                    println!(
+                        "  {:>2} (r{} c{}): {:?}",
+                        k.index,
+                        k.row,
+                        k.col,
+                        km.action(layer, k)
+                    );
                 }
             }
-            println!("wrote {} ({} layers) to {path}", km.actions.len(), km.layers);
+            println!(
+                "wrote {} ({} layers) to {path}",
+                km.actions.len(),
+                km.layers
+            );
             Ok(())
         })()),
         Some("--probe-layers") => Some((|| {
@@ -721,7 +834,10 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
             let reply = request(&mut t, &req_layer_subscribe(60))?;
             match parse_layer_state(&reply) {
                 Some(s) => println!("reply: {s:?}"),
-                None => println!("layer notify: not supported by this firmware (echo {:02x?})", &reply[..4]),
+                None => println!(
+                    "layer notify: not supported by this firmware (echo {:02x?})",
+                    &reply[..4]
+                ),
             }
             let _ = request(&mut t, &req_layer_state())?;
             let start = std::time::Instant::now();
@@ -755,7 +871,10 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
                     .ok_or_else(|| format!("action does not fit a packet: {action:?}"))?;
                 let reply = request(&mut t, &req)?;
                 if reply[4] != 0 {
-                    return Err(format!("keyboard rejected layer {layer} key {index} ({action:?}): status {}", reply[4]));
+                    return Err(format!(
+                        "keyboard rejected layer {layer} key {index} ({action:?}): status {}",
+                        reply[4]
+                    ));
                 }
                 written += 1;
                 std::thread::sleep(std::time::Duration::from_millis(25)); // let the flash queue drain
@@ -763,12 +882,17 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
             for (i, combo) in zmk_combos().iter().enumerate() {
                 let base = |idx: u8| {
                     let key = &keymap::OP36_KEYS[idx as usize];
-                    let action = zmk_layout().into_iter().find(|(l, k, _)| *l == 0 && *k == idx).map(|e| e.2).unwrap_or(keymap::KeyAction::No);
+                    let action = zmk_layout()
+                        .into_iter()
+                        .find(|(l, k, _)| *l == 0 && *k == idx)
+                        .map(|e| e.2)
+                        .unwrap_or(keymap::KeyAction::No);
                     let _ = key;
                     action_to_via_keycode(&action).unwrap_or(0)
                 };
                 let keys: Vec<u16> = combo.keys.iter().map(|k| base(*k)).collect();
-                let out = action_to_via_keycode(&combo.output).ok_or("combo output not expressible")?;
+                let out =
+                    action_to_via_keycode(&combo.output).ok_or("combo output not expressible")?;
                 t.write(&req_combo_set(i as u8, &keys, out))?;
                 // Vial dynamic-entry replies start with the return code (0 = ok), not the command byte.
                 let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
@@ -777,25 +901,36 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
                         Some(pkt) if pkt[0] == 0 => break,
                         Some(pkt) if pkt[0] == 0xE9 => continue,
                         Some(pkt) => return Err(format!("combo {i} rejected: {:02x?}", &pkt[..4])),
-                        None if std::time::Instant::now() > deadline => return Err(format!("combo {i}: no reply")),
+                        None if std::time::Instant::now() > deadline => {
+                            return Err(format!("combo {i}: no reply"));
+                        }
                         None => continue,
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(25));
             }
             write_taphold_settings(&mut t)?;
-            println!("wrote {written} keys and {} combos; verifying…", zmk_combos().len());
+            println!(
+                "wrote {written} keys and {} combos; verifying…",
+                zmk_combos().len()
+            );
             let km = read_keymap(&mut t, 6, 6)?;
             let mut mismatches = 0;
             for (layer, index, action) in zmk_layout() {
                 let got = km.action(layer, &keymap::OP36_KEYS[index as usize]);
                 if got != action {
                     mismatches += 1;
-                    println!("  layer {layer} key {index}: wanted {action:?}, keyboard has {got:?}");
+                    println!(
+                        "  layer {layer} key {index}: wanted {action:?}, keyboard has {got:?}"
+                    );
                 }
             }
             println!("verification: {} mismatches", mismatches);
-            if mismatches == 0 { Ok(()) } else { Err("keymap differs after write".into()) }
+            if mismatches == 0 {
+                Ok(())
+            } else {
+                Err("keymap differs after write".into())
+            }
         })()),
         Some("--version") => {
             println!("{}", version::version_line());
@@ -803,22 +938,32 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
         }
         Some("--snapshot") => Some((|| {
             // --snapshot <file.png> [EN|RU] [layer] [scale] [find-hid-hex]: render the keymap offline.
-            let path = args.get(1).ok_or("usage: --snapshot <file.png> [EN|RU] [layer] [scale]")?;
+            let path = args
+                .get(1)
+                .ok_or("usage: --snapshot <file.png> [EN|RU] [layer] [scale]")?;
             let hkl = match args.get(2).map(String::as_str) {
                 Some("RU") => legend::chars::RU,
                 _ => legend::chars::EN,
             };
             let layer: u8 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
             let scale: f32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(1.0);
-            let mut model = Model::new(Settings::default(), std::fs::read(paths::keymap_cache_file()).ok());
+            let mut model = Model::new(
+                Settings::default(),
+                std::fs::read(paths::keymap_cache_file()).ok(),
+            );
             model.apply(ModelEvent::Language(hkl));
-            model.apply(ModelEvent::Hid(model::HidEvent::Connected(vial::transport::Transport::Usb)));
+            model.apply(ModelEvent::Hid(model::HidEvent::Connected(
+                vial::transport::Transport::Usb,
+            )));
             model.apply(ModelEvent::Hid(model::HidEvent::Layer(model::LayerState {
                 active: layer,
                 mask: if layer == 0 { 0 } else { 1 << layer },
                 ..Default::default()
             })));
-            if let Some(hid) = args.get(5).and_then(|h| u8::from_str_radix(h.trim_start_matches("0x"), 16).ok()) {
+            if let Some(hid) = args
+                .get(5)
+                .and_then(|h| u8::from_str_radix(h.trim_start_matches("0x"), 16).ok())
+            {
                 model.apply(ModelEvent::Key(model::KeyPress {
                     hid: Some(hid),
                     scancode: 0,
@@ -828,14 +973,19 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
                 }));
             }
             // Optional tokens anywhere after the file: charging=left|right|both, master=right, switching.
-            let token = |name: &str| args.iter().find_map(|a| a.strip_prefix(name).map(str::to_string));
+            let token = |name: &str| {
+                args.iter()
+                    .find_map(|a| a.strip_prefix(name).map(str::to_string))
+            };
             let charging = token("charging=").unwrap_or_default();
-            model.apply(ModelEvent::Hid(model::HidEvent::Battery(vial::protocol::BatteryHalves {
-                left: Some(85),
-                right: Some(15),
-                left_charging: matches!(charging.as_str(), "left" | "both"),
-                right_charging: matches!(charging.as_str(), "right" | "both"),
-            })));
+            model.apply(ModelEvent::Hid(model::HidEvent::Battery(
+                vial::protocol::BatteryHalves {
+                    left: Some(85),
+                    right: Some(15),
+                    left_charging: matches!(charging.as_str(), "left" | "both"),
+                    right_charging: matches!(charging.as_str(), "right" | "both"),
+                },
+            )));
             if args.iter().any(|a| a == "half-offline") {
                 model.apply(ModelEvent::Hid(model::HidEvent::Layer(model::LayerState {
                     active: layer,
@@ -856,27 +1006,43 @@ fn run_cli(args: &[String]) -> Option<Result<(), String>> {
                 })));
             }
             if args.iter().any(|a| a == "switching") {
-                model.apply(ModelEvent::Hid(model::HidEvent::Switching(vial::protocol::Side::Right)));
+                model.apply(ModelEvent::Hid(model::HidEvent::Switching(
+                    vial::protocol::Side::Right,
+                )));
                 model.apply(ModelEvent::Hid(model::HidEvent::Disconnected));
             }
             let frame = model.frame(&WinCharSource::new());
             let mut renderer = Renderer::new().map_err(|e| e.to_string())?;
             renderer.switch_phase = true;
-            let bmp = renderer.render(&frame, scale, 1.0).map_err(|e| e.to_string())?;
+            let bmp = renderer
+                .render(&frame, scale, 1.0)
+                .map_err(|e| e.to_string())?;
             // Un-premultiply onto an opaque dark background so the PNG is viewable anywhere.
             let mut rgba = Vec::with_capacity(bmp.premultiplied.len() * 4);
             for px in &bmp.premultiplied {
-                let (a, r, g, b) = ((px >> 24) & 0xFF, (px >> 16) & 0xFF, (px >> 8) & 0xFF, px & 0xFF);
+                let (a, r, g, b) = (
+                    (px >> 24) & 0xFF,
+                    (px >> 16) & 0xFF,
+                    (px >> 8) & 0xFF,
+                    px & 0xFF,
+                );
                 let bg = |c: u32| (c + 0x3A * (255 - a) / 255).min(255) as u8;
                 rgba.extend_from_slice(&[bg(r), bg(g), bg(b), 255]);
             }
             let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), bmp.width as u32, bmp.height as u32);
+            let mut enc = png::Encoder::new(
+                std::io::BufWriter::new(file),
+                bmp.width as u32,
+                bmp.height as u32,
+            );
             enc.set_color(png::ColorType::Rgba);
             enc.set_depth(png::BitDepth::Eight);
             let mut w = enc.write_header().map_err(|e| e.to_string())?;
             w.write_image_data(&rgba).map_err(|e| e.to_string())?;
-            println!("wrote {path} ({}x{}), status: {}", bmp.width, bmp.height, frame.status);
+            println!(
+                "wrote {path} ({}x{}), status: {}",
+                bmp.width, bmp.height, frame.status
+            );
             Ok(())
         })()),
         _ => None,
@@ -891,7 +1057,8 @@ fn open_options(app: &Rc<RefCell<App>>) {
             if let Some(dlg) = &a.options {
                 // SAFETY: raising our own window.
                 unsafe {
-                    let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(dlg.hwnd());
+                    let _ =
+                        windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(dlg.hwnd());
                 }
                 return;
             }
@@ -906,7 +1073,9 @@ fn open_options(app: &Rc<RefCell<App>>) {
         status,
         firmware,
         Box::new(move |action| {
-            let mut a = app_for_dialog.try_borrow_mut().map_err(|_| "application busy".to_string())?;
+            let mut a = app_for_dialog
+                .try_borrow_mut()
+                .map_err(|_| "application busy".to_string())?;
             match action {
                 DialogAction::Settings { mut settings, save } => {
                     // The dialog owns only its controls: the hotkey may have toggled the overlay
@@ -953,7 +1122,10 @@ fn open_options(app: &Rc<RefCell<App>>) {
 fn main() {
     // SAFETY: COM for the Startup-folder shortcut; apartment threaded on the UI thread.
     unsafe {
-        let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED);
+        let _ = windows::Win32::System::Com::CoInitializeEx(
+            None,
+            windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+        );
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.is_empty() {
@@ -1017,146 +1189,166 @@ fn main() {
     // SAFETY: plain registration of a well-known message name.
     let taskbar_created = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
     let app_for_handler = Rc::clone(&app);
-    let msg_window = MsgWindow::create(Box::new(move |hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM| {
-        if msg == taskbar_created && msg != 0 {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                let tip = app.last_tooltip.clone();
-                if let Some(tray) = app.tray.as_mut() {
-                    tray.readd(&tip);
+    let msg_window = MsgWindow::create(Box::new(
+        move |hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM| {
+            match msgwindow::system_request(msg, wparam.0) {
+                Some(SystemRequest::AgreeToEnd) => return Some(LRESULT(1)),
+                Some(SystemRequest::Exit) => {
+                    log::info!("exit requested by the system (installer or session end)");
+                    match app_for_handler.try_borrow_mut() {
+                        Ok(mut app) => app.handle(TrayCmd::Exit),
+                        // SAFETY: ends the message loop; the destructors clean up.
+                        Err(_) => unsafe { PostQuitMessage(0) },
+                    }
+                    return Some(LRESULT(0));
+                }
+                None => {}
+            }
+            if msg == taskbar_created && msg != 0 {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    let tip = app.last_tooltip.clone();
+                    if let Some(tray) = app.tray.as_mut() {
+                        tray.readd(&tip);
+                    }
+                }
+                return Some(LRESULT(0));
+            }
+            // The tray menu runs a modal loop that re-enters this handler, so never hold a borrow
+            // across `tray::show_menu`, and never panic on a re-entrant borrow.
+            if msg == WM_INPUT {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_raw_input(lparam);
+                }
+                return None; // Raw Input still wants DefWindowProc to run cleanup
+            }
+            if msg == WM_TIMER && wparam.0 == TIMER_FIND {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    // SAFETY: our own timer.
+                    unsafe {
+                        let _ = KillTimer(Some(hwnd), TIMER_FIND);
+                    }
+                    app.on_model_event(ModelEvent::FindExpired);
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_APP_UPDATE {
+                let event = update_thread::take_event(lparam);
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_update_event(*event);
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_APP_FLASH {
+                let step = firmware_thread::take_step(lparam);
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_flash_step(*step);
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_TIMER && wparam.0 == TIMER_SWITCH {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_switch_tick();
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_TIMER && wparam.0 == TIMER_OFFLINE {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_offline_timer();
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_TIMER && wparam.0 == TIMER_HIDE {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_hide_timer();
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_TIMER && wparam.0 == TIMER_TOPMOST {
+                if let Ok(app) = app_for_handler.try_borrow() {
+                    if app.overlay_shown {
+                        app.overlay.reassert_topmost();
+                    }
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_SETTINGCHANGE {
+                // Theme or work-area change: redraw and re-place.
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.redraw(true);
+                }
+                return None;
+            }
+            if msg == WM_APP_APPBAR {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    let mons = monitors();
+                    let rect = Some(chosen_monitor(&app.settings, &mons).monitor_rect);
+                    app.appbar.on_notification(wparam.0, lparam, rect);
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_DISPLAYCHANGE || msg == WM_DPICHANGED {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.redraw(true);
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_APP_LANG || (msg == WM_TIMER && wparam.0 == TIMER_LANG) {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    app.on_language_check(msg == WM_APP_LANG);
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_APP_HID {
+                let event = hid_thread::take_event(lparam);
+                match app_for_handler.try_borrow_mut() {
+                    Ok(mut app) => app.on_model_event(ModelEvent::Hid(*event)),
+                    Err(_) => log::warn!("dropped HID event while busy: {event:?}"),
+                }
+                return Some(LRESULT(0));
+            }
+            if msg == WM_HOTKEY
+                && (HOTKEY_NUDGE_BASE..HOTKEY_NUDGE_BASE + 4).contains(&(wparam.0 as i32))
+            {
+                if let Ok(mut app) = app_for_handler.try_borrow_mut() {
+                    let (dx, dy) = match wparam.0 as i32 - HOTKEY_NUDGE_BASE {
+                        0 => (-NUDGE_PX, 0),
+                        1 => (0, -NUDGE_PX),
+                        2 => (NUDGE_PX, 0),
+                        _ => (0, NUDGE_PX),
+                    };
+                    app.nudge(dx, dy);
+                }
+                return Some(LRESULT(0));
+            }
+            let cmd = match msg {
+                WM_APP_TOGGLE => Some(TrayCmd::Toggle),
+                WM_HOTKEY if wparam.0 as i32 == HOTKEY_ID => Some(TrayCmd::Toggle),
+                WM_APP_TRAY => match tray::classify_click(lparam.0 as u32 & 0xFFFF) {
+                    Some(tray::TrayClick::Command(cmd)) => Some(cmd),
+                    Some(tray::TrayClick::Menu) => {
+                        let visible = app_for_handler
+                            .try_borrow()
+                            .map(|a| a.settings.visible)
+                            .unwrap_or(true);
+                        tray::show_menu(hwnd, visible)
+                    }
+                    None => None,
+                },
+                _ => return None,
+            };
+            if cmd == Some(TrayCmd::Options) {
+                open_options(&app_for_handler);
+                return Some(LRESULT(0));
+            }
+            if let Some(cmd) = cmd {
+                match app_for_handler.try_borrow_mut() {
+                    Ok(mut app) => app.handle(cmd),
+                    Err(_) => log::warn!("ignored {cmd:?}: application state busy"),
                 }
             }
-            return Some(LRESULT(0));
-        }
-        // The tray menu runs a modal loop that re-enters this handler, so never hold a borrow
-        // across `tray::show_menu`, and never panic on a re-entrant borrow.
-        if msg == WM_INPUT {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.on_raw_input(lparam);
-            }
-            return None; // Raw Input still wants DefWindowProc to run cleanup
-        }
-        if msg == WM_TIMER && wparam.0 == TIMER_FIND {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                // SAFETY: our own timer.
-                unsafe {
-                    let _ = KillTimer(Some(hwnd), TIMER_FIND);
-                }
-                app.on_model_event(ModelEvent::FindExpired);
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_APP_UPDATE {
-            let event = update_thread::take_event(lparam);
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.on_update_event(*event);
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_APP_FLASH {
-            let step = firmware_thread::take_step(lparam);
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.on_flash_step(*step);
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_TIMER && wparam.0 == TIMER_SWITCH {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.on_switch_tick();
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_TIMER && wparam.0 == TIMER_OFFLINE {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.on_offline_timer();
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_TIMER && wparam.0 == TIMER_HIDE {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.on_hide_timer();
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_TIMER && wparam.0 == TIMER_TOPMOST {
-            if let Ok(app) = app_for_handler.try_borrow() {
-                if app.overlay_shown {
-                    app.overlay.reassert_topmost();
-                }
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_SETTINGCHANGE {
-            // Theme or work-area change: redraw and re-place.
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.redraw(true);
-            }
-            return None;
-        }
-        if msg == WM_APP_APPBAR {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                let mons = monitors();
-                let rect = Some(chosen_monitor(&app.settings, &mons).monitor_rect);
-                app.appbar.on_notification(wparam.0, lparam, rect);
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_DISPLAYCHANGE || msg == WM_DPICHANGED {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.redraw(true);
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_APP_LANG || (msg == WM_TIMER && wparam.0 == TIMER_LANG) {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                app.on_language_check(msg == WM_APP_LANG);
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_APP_HID {
-            let event = hid_thread::take_event(lparam);
-            match app_for_handler.try_borrow_mut() {
-                Ok(mut app) => app.on_model_event(ModelEvent::Hid(*event)),
-                Err(_) => log::warn!("dropped HID event while busy: {event:?}"),
-            }
-            return Some(LRESULT(0));
-        }
-        if msg == WM_HOTKEY && (HOTKEY_NUDGE_BASE..HOTKEY_NUDGE_BASE + 4).contains(&(wparam.0 as i32)) {
-            if let Ok(mut app) = app_for_handler.try_borrow_mut() {
-                let (dx, dy) = match wparam.0 as i32 - HOTKEY_NUDGE_BASE {
-                    0 => (-NUDGE_PX, 0),
-                    1 => (0, -NUDGE_PX),
-                    2 => (NUDGE_PX, 0),
-                    _ => (0, NUDGE_PX),
-                };
-                app.nudge(dx, dy);
-            }
-            return Some(LRESULT(0));
-        }
-        let cmd = match msg {
-            WM_APP_TOGGLE => Some(TrayCmd::Toggle),
-            WM_HOTKEY if wparam.0 as i32 == HOTKEY_ID => Some(TrayCmd::Toggle),
-            WM_APP_TRAY => match tray::classify_click(lparam.0 as u32 & 0xFFFF) {
-                Some(tray::TrayClick::Command(cmd)) => Some(cmd),
-                Some(tray::TrayClick::Menu) => {
-                    let visible = app_for_handler.try_borrow().map(|a| a.settings.visible).unwrap_or(true);
-                    tray::show_menu(hwnd, visible)
-                }
-                None => None,
-            },
-            _ => return None,
-        };
-        if cmd == Some(TrayCmd::Options) {
-            open_options(&app_for_handler);
-            return Some(LRESULT(0));
-        }
-        if let Some(cmd) = cmd {
-            match app_for_handler.try_borrow_mut() {
-                Ok(mut app) => app.handle(cmd),
-                Err(_) => log::warn!("ignored {cmd:?}: application state busy"),
-            }
-        }
-        Some(LRESULT(0))
-    }))
+            Some(LRESULT(0))
+        },
+    ))
     .expect("message window");
 
     let hwnd = msg_window.hwnd();
@@ -1193,7 +1385,10 @@ fn main() {
     unsafe {
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             // Tab / Shift+Tab / Esc / Enter in the Options window.
-            let dialog = app.try_borrow().ok().and_then(|a| a.options.as_ref().map(|d| d.hwnd()));
+            let dialog = app
+                .try_borrow()
+                .ok()
+                .and_then(|a| a.options.as_ref().map(|d| d.hwnd()));
             if let Some(dlg) = dialog {
                 if IsDialogMessageW(dlg, &mut msg).as_bool() {
                     continue;

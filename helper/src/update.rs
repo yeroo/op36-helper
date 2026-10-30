@@ -38,11 +38,18 @@ impl Channel {
 
 pub fn detect_channel(exe: &Path, local_app_data: &Path) -> Channel {
     let exe_lower = exe.to_string_lossy().to_ascii_lowercase();
-    if exe_lower.contains("\\scoop\\apps\\") || exe_lower.contains("\\chocolatey\\") || exe_lower.contains("\\windowsapps\\") {
+    if exe_lower.contains("\\scoop\\apps\\")
+        || exe_lower.contains("\\chocolatey\\")
+        || exe_lower.contains("\\windowsapps\\")
+    {
         return Channel::PackageManager;
     }
     let install_dir = local_app_data.join("Programs").join("OP36 Helper");
-    if exe.starts_with(&install_dir) { Channel::Installed } else { Channel::Portable }
+    if exe.starts_with(&install_dir) {
+        Channel::Installed
+    } else {
+        Channel::Portable
+    }
 }
 
 /// One downloadable file of a release.
@@ -111,7 +118,9 @@ pub fn refuse_reason(asset: &Asset) -> Option<&'static str> {
 /// `true` only when the file hashes to `expected_hex` (case-insensitive); missing file → `false`.
 pub fn verify_sha256(path: &Path, expected_hex: &str) -> bool {
     use sha2::Digest;
-    let Ok(bytes) = std::fs::read(path) else { return false };
+    let Ok(bytes) = std::fs::read(path) else {
+        return false;
+    };
     let actual = sha2::Sha256::digest(&bytes);
     let actual_hex: String = actual.iter().map(|b| format!("{b:02x}")).collect();
     actual_hex.eq_ignore_ascii_case(expected_hex)
@@ -124,7 +133,10 @@ pub fn apply_script() -> &'static str {
 
 /// Where payloads and the helper script are written.
 pub fn updates_dir() -> PathBuf {
-    dirs::data_local_dir().unwrap_or_default().join("op36-helper").join("updates")
+    dirs::data_local_dir()
+        .unwrap_or_default()
+        .join("op36-helper")
+        .join("updates")
 }
 
 /// Start-up housekeeping: the `.old` exe a portable swap leaves and old payloads. Best effort.
@@ -146,7 +158,13 @@ mod tests {
     fn release_parses_version_assets_and_digests() {
         let r = parse_release(SAMPLE).unwrap();
         assert_eq!(r.version, "0.2.1");
-        assert_eq!(pick_asset(&r, Channel::Installed).unwrap().sha256.as_deref(), Some("ab12000000000000000000000000000000000000000000000000000000000000"));
+        assert_eq!(
+            pick_asset(&r, Channel::Installed)
+                .unwrap()
+                .sha256
+                .as_deref(),
+            Some("ab12000000000000000000000000000000000000000000000000000000000000")
+        );
         assert_eq!(pick_asset(&r, Channel::Portable).unwrap().sha256, None);
         assert!(pick_asset(&r, Channel::PackageManager).is_none());
     }
@@ -163,31 +181,58 @@ mod tests {
     fn missing_digest_refuses_update() {
         let r = parse_release(SAMPLE).unwrap();
         let portable = pick_asset(&r, Channel::Portable).unwrap();
-        assert!(portable.sha256.is_none(), "the worker must refuse this asset");
-        assert_eq!(refuse_reason(portable), Some("the release asset carries no SHA-256 digest"));
-        assert_eq!(refuse_reason(pick_asset(&r, Channel::Installed).unwrap()), None);
+        assert!(
+            portable.sha256.is_none(),
+            "the worker must refuse this asset"
+        );
+        assert_eq!(
+            refuse_reason(portable),
+            Some("the release asset carries no SHA-256 digest")
+        );
+        assert_eq!(
+            refuse_reason(pick_asset(&r, Channel::Installed).unwrap()),
+            None
+        );
     }
 
     #[test]
     fn channel_detection_from_exe_path() {
         let lad = Path::new(r"C:\Users\b\AppData\Local");
         assert_eq!(
-            detect_channel(Path::new(r"C:\Users\b\AppData\Local\Programs\OP36 Helper\op36-helper.exe"), lad),
+            detect_channel(
+                Path::new(r"C:\Users\b\AppData\Local\Programs\OP36 Helper\op36-helper.exe"),
+                lad
+            ),
             Channel::Installed
         );
         assert_eq!(
-            detect_channel(Path::new(r"C:\Users\b\scoop\apps\op36-helper\current\op36-helper.exe"), lad),
+            detect_channel(
+                Path::new(r"C:\Users\b\scoop\apps\op36-helper\current\op36-helper.exe"),
+                lad
+            ),
             Channel::PackageManager
         );
-        assert_eq!(detect_channel(Path::new(r"D:\tools\op36-helper.exe"), lad), Channel::Portable);
+        assert_eq!(
+            detect_channel(Path::new(r"D:\tools\op36-helper.exe"), lad),
+            Channel::Portable
+        );
     }
 
     #[test]
     fn sha256_verification_fails_closed() {
         let f = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(f.path(), b"abc").unwrap();
-        assert!(verify_sha256(f.path(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
-        assert!(verify_sha256(f.path(), "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"), "case-insensitive");
+        assert!(verify_sha256(
+            f.path(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        ));
+        assert!(
+            verify_sha256(
+                f.path(),
+                "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"
+            ),
+            "case-insensitive"
+        );
         assert!(!verify_sha256(f.path(), "00"));
         assert!(!verify_sha256(Path::new(r"Z:\missing\file.exe"), "00"));
     }

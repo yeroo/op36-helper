@@ -95,7 +95,10 @@ mod tests {
 
     fn key(vk: u16, down: bool) -> RawKey {
         RawKey {
-            scancode: ScanCode { code: 0, extended: false },
+            scancode: ScanCode {
+                code: 0,
+                extended: false,
+            },
             vk,
             down,
             device: DeviceKind::Other,
@@ -107,7 +110,10 @@ mod tests {
         let mut t = ModTracker::default();
         assert!(t.apply(&key(VK_LSHIFT, true)).shift);
         t.apply(&key(VK_RSHIFT, true));
-        assert!(t.apply(&key(VK_LSHIFT, false)).shift, "right shift still held");
+        assert!(
+            t.apply(&key(VK_LSHIFT, false)).shift,
+            "right shift still held"
+        );
         assert_eq!(t.apply(&key(VK_RSHIFT, false)), Modifiers::default());
     }
 

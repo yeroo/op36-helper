@@ -30,8 +30,18 @@ pub fn edge_for(anchor: Anchor) -> Option<Edge> {
 pub fn strip_rect(monitor: (i32, i32, i32, i32), edge: Edge, thickness: i32) -> RECT {
     let (l, t, r, b) = monitor;
     match edge {
-        Edge::Top => RECT { left: l, top: t, right: r, bottom: t + thickness },
-        Edge::Bottom => RECT { left: l, top: b - thickness, right: r, bottom: b },
+        Edge::Top => RECT {
+            left: l,
+            top: t,
+            right: r,
+            bottom: t + thickness,
+        },
+        Edge::Bottom => RECT {
+            left: l,
+            top: b - thickness,
+            right: r,
+            bottom: b,
+        },
     }
 }
 
@@ -44,7 +54,11 @@ pub struct AppBar {
 
 impl AppBar {
     pub fn new(hwnd: HWND) -> AppBar {
-        AppBar { hwnd, registered: false, current: None }
+        AppBar {
+            hwnd,
+            registered: false,
+            current: None,
+        }
     }
 
     fn data(&self) -> APPBARDATA {
@@ -57,8 +71,18 @@ impl AppBar {
     }
 
     /// Reserve `thickness` px at `edge` of the monitor; re-registers as needed.
-    pub fn reserve(&mut self, monitor_name: &str, monitor: (i32, i32, i32, i32), edge: Edge, thickness: i32) {
-        if self.current.as_ref().is_some_and(|(n, e, t)| n == monitor_name && *e == edge && *t == thickness) {
+    pub fn reserve(
+        &mut self,
+        monitor_name: &str,
+        monitor: (i32, i32, i32, i32),
+        edge: Edge,
+        thickness: i32,
+    ) {
+        if self
+            .current
+            .as_ref()
+            .is_some_and(|(n, e, t)| n == monitor_name && *e == edge && *t == thickness)
+        {
             return;
         }
         let mut abd = self.data();
@@ -71,7 +95,11 @@ impl AppBar {
                     return;
                 }
             }
-            abd.uEdge = if edge == Edge::Top { ABE_TOP } else { ABE_BOTTOM };
+            abd.uEdge = if edge == Edge::Top {
+                ABE_TOP
+            } else {
+                ABE_BOTTOM
+            };
             abd.rc = strip_rect(monitor, edge, thickness);
             SHAppBarMessage(ABM_QUERYPOS, &mut abd);
             // Keep our thickness after the shell adjusted the rect for other bars.
@@ -100,7 +128,12 @@ impl AppBar {
     }
 
     /// Shell notification (position changed, full-screen app, …): re-apply the current reservation.
-    pub fn on_notification(&mut self, _wparam: usize, _lparam: LPARAM, monitor: Option<(i32, i32, i32, i32)>) {
+    pub fn on_notification(
+        &mut self,
+        _wparam: usize,
+        _lparam: LPARAM,
+        monitor: Option<(i32, i32, i32, i32)>,
+    ) {
         if let (Some((name, edge, thickness)), Some(rect)) = (self.current.clone(), monitor) {
             self.current = None;
             self.reserve(&name, rect, edge, thickness);

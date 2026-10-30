@@ -118,7 +118,10 @@ impl Settings {
     pub fn load(path: &Path) -> Settings {
         match std::fs::read_to_string(path) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-                log::warn!("settings file {} is invalid ({e}); using defaults", path.display());
+                log::warn!(
+                    "settings file {} is invalid ({e}); using defaults",
+                    path.display()
+                );
                 Settings::default()
             }),
             Err(_) => Settings::default(),
@@ -131,7 +134,10 @@ impl Settings {
             std::fs::create_dir_all(dir)?;
         }
         let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(self).map_err(std::io::Error::other)?)?;
+        std::fs::write(
+            &tmp,
+            serde_json::to_string_pretty(self).map_err(std::io::Error::other)?,
+        )?;
         std::fs::rename(&tmp, path)
     }
 }
@@ -188,7 +194,10 @@ mod tests {
 
     #[test]
     fn move_hotkey_default_is_ctrl_alt() {
-        assert_eq!(Settings::default().move_hotkey_mods, MOD_CONTROL.0 | MOD_ALT.0);
+        assert_eq!(
+            Settings::default().move_hotkey_mods,
+            MOD_CONTROL.0 | MOD_ALT.0
+        );
     }
 
     #[test]
@@ -214,6 +223,9 @@ mod tests {
     #[test]
     fn missing_file_yields_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(Settings::load(&dir.path().join("nope.json")), Settings::default());
+        assert_eq!(
+            Settings::load(&dir.path().join("nope.json")),
+            Settings::default()
+        );
     }
 }

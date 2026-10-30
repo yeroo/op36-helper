@@ -6,8 +6,9 @@ use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
 use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EVENT_OBJECT_FOCUS, EVENT_SYSTEM_FOREGROUND, GUITHREADINFO, GetForegroundWindow, GetGUIThreadInfo,
-    GetWindowThreadProcessId, PostMessageW, SetTimer, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+    EVENT_OBJECT_FOCUS, EVENT_SYSTEM_FOREGROUND, GUITHREADINFO, GetForegroundWindow,
+    GetGUIThreadInfo, GetWindowThreadProcessId, PostMessageW, SetTimer, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS,
 };
 
 use crate::model::Hkl;
@@ -39,7 +40,10 @@ pub fn foreground_hkl() -> Hkl {
             cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
             ..Default::default()
         };
-        if GetGUIThreadInfo(tid, &mut info).is_ok() && !info.hwndFocus.is_invalid() && info.hwndFocus != fg {
+        if GetGUIThreadInfo(tid, &mut info).is_ok()
+            && !info.hwndFocus.is_invalid()
+            && info.hwndFocus != fg
+        {
             let focus_tid = GetWindowThreadProcessId(info.hwndFocus, None);
             if focus_tid != 0 {
                 tid = focus_tid;
@@ -64,7 +68,12 @@ unsafe extern "system" fn on_win_event(
     if target != 0 {
         // SAFETY: posting to our own message window.
         unsafe {
-            let _ = PostMessageW(Some(HWND(target as *mut _)), WM_APP_LANG, WPARAM(0), LPARAM(0));
+            let _ = PostMessageW(
+                Some(HWND(target as *mut _)),
+                WM_APP_LANG,
+                WPARAM(0),
+                LPARAM(0),
+            );
         }
     }
 }
@@ -82,8 +91,24 @@ impl LanguageWatcher {
         let hooks = unsafe {
             let flags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
             [
-                SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, None, Some(on_win_event), 0, 0, flags),
-                SetWinEventHook(EVENT_OBJECT_FOCUS, EVENT_OBJECT_FOCUS, None, Some(on_win_event), 0, 0, flags),
+                SetWinEventHook(
+                    EVENT_SYSTEM_FOREGROUND,
+                    EVENT_SYSTEM_FOREGROUND,
+                    None,
+                    Some(on_win_event),
+                    0,
+                    0,
+                    flags,
+                ),
+                SetWinEventHook(
+                    EVENT_OBJECT_FOCUS,
+                    EVENT_OBJECT_FOCUS,
+                    None,
+                    Some(on_win_event),
+                    0,
+                    0,
+                    flags,
+                ),
             ]
         };
         // SAFETY: timer on our own window.

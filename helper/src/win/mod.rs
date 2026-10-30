@@ -12,5 +12,9 @@ pub fn to_wide(s: &str) -> Vec<u16> {
 
 pub fn hinstance() -> HINSTANCE {
     // SAFETY: GetModuleHandleW(None) never fails for the running executable.
-    unsafe { GetModuleHandleW(None).map(|h| HINSTANCE(h.0)).unwrap_or_default() }
+    unsafe {
+        GetModuleHandleW(None)
+            .map(|h| HINSTANCE(h.0))
+            .unwrap_or_default()
+    }
 }

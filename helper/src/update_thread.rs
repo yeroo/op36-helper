@@ -9,7 +9,10 @@ use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
-use crate::update::{API_URL, Channel, Release, detect_channel, parse_release, pick_asset, refuse_reason, updates_dir, verify_sha256};
+use crate::update::{
+    API_URL, Channel, Release, detect_channel, parse_release, pick_asset, refuse_reason,
+    updates_dir, verify_sha256,
+};
 use crate::version::{VERSION, is_newer};
 use crate::win::msgwindow::WM_APP_UPDATE;
 
@@ -35,7 +38,11 @@ pub enum UpdateEvent {
     CheckFailed,
     Downloading(String),
     /// Payload verified; the UI thread starts `helper` and exits.
-    Verified { payload: PathBuf, helper: PathBuf, channel: Channel },
+    Verified {
+        payload: PathBuf,
+        helper: PathBuf,
+        channel: Channel,
+    },
     Failed(String),
 }
 
@@ -57,7 +64,11 @@ pub fn spawn(ui_hwnd: HWND, auto_check: bool) -> Sender<UpdateCmd> {
 fn run(ui: UiWindow, rx: Receiver<UpdateCmd>, mut auto_check: bool) {
     let mut next_check = Instant::now() + FIRST_CHECK;
     loop {
-        let wait = if auto_check { next_check.saturating_duration_since(Instant::now()) } else { Duration::from_secs(3600) };
+        let wait = if auto_check {
+            next_check.saturating_duration_since(Instant::now())
+        } else {
+            Duration::from_secs(3600)
+        };
         match rx.recv_timeout(wait) {
             Err(RecvTimeoutError::Disconnected) => return,
             Ok(UpdateCmd::AutoCheck(on)) => auto_check = on,
@@ -84,24 +95,49 @@ fn check() -> UpdateEvent {
 fn update(ui: UiWindow) {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
-        Err(e) => return post(ui, UpdateEvent::Failed(format!("cannot resolve the running exe: {e}"))),
+        Err(e) => {
+            return post(
+                ui,
+                UpdateEvent::Failed(format!("cannot resolve the running exe: {e}")),
+            );
+        }
     };
     let local_app_data = dirs::data_local_dir().unwrap_or_default();
     let channel = detect_channel(&exe, &local_app_data);
     if channel == Channel::PackageManager {
-        return post(ui, UpdateEvent::Failed("this copy is managed by a package manager; update it there".into()));
+        return post(
+            ui,
+            UpdateEvent::Failed(
+                "this copy is managed by a package manager; update it there".into(),
+            ),
+        );
     }
     let Some(release) = fetch_latest() else {
-        return post(ui, UpdateEvent::Failed("update check failed (offline or rate-limited); try again later".into()));
+        return post(
+            ui,
+            UpdateEvent::Failed(
+                "update check failed (offline or rate-limited); try again later".into(),
+            ),
+        );
     };
     if !is_newer(&release.version, VERSION) {
         return post(ui, UpdateEvent::UpToDate);
     }
     let Some(asset) = pick_asset(&release, channel) else {
-        return post(ui, UpdateEvent::Failed(format!("release {} has no {} asset", release.version, channel.asset_kind())));
+        return post(
+            ui,
+            UpdateEvent::Failed(format!(
+                "release {} has no {} asset",
+                release.version,
+                channel.asset_kind()
+            )),
+        );
     };
     if let Some(reason) = refuse_reason(asset) {
-        return post(ui, UpdateEvent::Failed(format!("refusing an unverifiable update: {reason}")));
+        return post(
+            ui,
+            UpdateEvent::Failed(format!("refusing an unverifiable update: {reason}")),
+        );
     }
     post(ui, UpdateEvent::Downloading(release.version.clone()));
     let dir = updates_dir();
@@ -112,22 +148,43 @@ fn update(ui: UiWindow) {
     }
     if !verify_sha256(&payload, asset.sha256.as_deref().unwrap_or("")) {
         let _ = std::fs::remove_file(&payload);
-        return post(ui, UpdateEvent::Failed("download failed SHA-256 verification; nothing was installed".into()));
+        return post(
+            ui,
+            UpdateEvent::Failed(
+                "download failed SHA-256 verification; nothing was installed".into(),
+            ),
+        );
     }
     let helper = dir.join("apply-update.ps1");
     if let Err(e) = std::fs::write(&helper, crate::update::apply_script()) {
-        return post(ui, UpdateEvent::Failed(format!("cannot write the update helper: {e}")));
+        return post(
+            ui,
+            UpdateEvent::Failed(format!("cannot write the update helper: {e}")),
+        );
     }
-    post(ui, UpdateEvent::Verified { payload, helper, channel });
+    post(
+        ui,
+        UpdateEvent::Verified {
+            payload,
+            helper,
+            channel,
+        },
+    );
 }
 
 /// The latest release document, from the API or the `OP36_UPDATE_API` test seam.
 fn fetch_latest() -> Option<Release> {
-    let api = std::env::var(API_ENV).ok().filter(|s| !s.is_empty()).unwrap_or_else(|| API_URL.to_string());
+    let api = std::env::var(API_ENV)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| API_URL.to_string());
     let json = if !api.starts_with("http") && std::path::Path::new(&api).is_file() {
         std::fs::read_to_string(&api).ok()?
     } else {
-        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).user_agent("op36-helper").build();
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(20))
+            .user_agent("op36-helper")
+            .build();
         agent
             .get(&api)
             .set("Accept", "application/vnd.github+json")
@@ -143,12 +200,19 @@ fn fetch_latest() -> Option<Release> {
 fn download(url: &str, dest: &PathBuf) -> Result<(), String> {
     std::fs::create_dir_all(dest.parent().ok_or("bad destination")?).map_err(|e| e.to_string())?;
     if !url.starts_with("http") && std::path::Path::new(url).is_file() {
-        std::fs::copy(url, dest).map(|_| ()).map_err(|e| e.to_string())
+        std::fs::copy(url, dest)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     } else {
-        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(600)).user_agent("op36-helper").build();
+        let agent = ureq::AgentBuilder::new()
+            .timeout(Duration::from_secs(600))
+            .user_agent("op36-helper")
+            .build();
         let resp = agent.get(url).call().map_err(|e| e.to_string())?;
         let mut file = std::fs::File::create(dest).map_err(|e| e.to_string())?;
-        std::io::copy(&mut resp.into_reader(), &mut file).map(|_| ()).map_err(|e| e.to_string())
+        std::io::copy(&mut resp.into_reader(), &mut file)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -156,7 +220,12 @@ fn post(ui: UiWindow, event: UpdateEvent) {
     let boxed = Box::new(event);
     // SAFETY: the UI thread takes ownership back with `take_event`.
     unsafe {
-        let _ = PostMessageW(Some(HWND(ui.0 as *mut _)), WM_APP_UPDATE, WPARAM(0), LPARAM(Box::into_raw(boxed) as isize));
+        let _ = PostMessageW(
+            Some(HWND(ui.0 as *mut _)),
+            WM_APP_UPDATE,
+            WPARAM(0),
+            LPARAM(Box::into_raw(boxed) as isize),
+        );
     }
 }
 

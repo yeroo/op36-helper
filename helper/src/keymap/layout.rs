@@ -107,7 +107,11 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for k in OP36_KEYS.iter() {
             assert!(k.row < 6 && k.col < 6, "key {} out of matrix", k.index);
-            assert!(seen.insert((k.row, k.col)), "duplicate matrix position {:?}", (k.row, k.col));
+            assert!(
+                seen.insert((k.row, k.col)),
+                "duplicate matrix position {:?}",
+                (k.row, k.col)
+            );
         }
         assert_eq!(seen.len(), 36);
         for (i, k) in OP36_KEYS.iter().enumerate() {
@@ -126,20 +130,48 @@ mod tests {
 
     #[test]
     fn home_row_flags() {
-        let home: Vec<u8> = OP36_KEYS.iter().filter(|k| k.home_row).map(|k| k.index).collect();
+        let home: Vec<u8> = OP36_KEYS
+            .iter()
+            .filter(|k| k.home_row)
+            .map(|k| k.index)
+            .collect();
         assert_eq!(home, vec![10, 11, 12, 13, 16, 17, 18, 19]);
     }
 
     #[test]
     fn hands_columns_and_thumbs() {
-        assert_eq!((OP36_KEYS[0].hand, OP36_KEYS[0].column, OP36_KEYS[0].thumb), (Hand::Left, Some(0), None));
-        assert_eq!((OP36_KEYS[4].hand, OP36_KEYS[4].column), (Hand::Left, Some(4)));
-        assert_eq!((OP36_KEYS[5].hand, OP36_KEYS[5].column), (Hand::Right, Some(4)));
-        assert_eq!((OP36_KEYS[9].hand, OP36_KEYS[9].column), (Hand::Right, Some(0)));
-        assert_eq!((OP36_KEYS[30].hand, OP36_KEYS[30].thumb), (Hand::Left, Some(0))); // outer
-        assert_eq!((OP36_KEYS[32].hand, OP36_KEYS[32].thumb), (Hand::Left, Some(2))); // inner
-        assert_eq!((OP36_KEYS[33].hand, OP36_KEYS[33].thumb), (Hand::Right, Some(2))); // inner
-        assert_eq!((OP36_KEYS[35].hand, OP36_KEYS[35].thumb), (Hand::Right, Some(0))); // outer
+        assert_eq!(
+            (OP36_KEYS[0].hand, OP36_KEYS[0].column, OP36_KEYS[0].thumb),
+            (Hand::Left, Some(0), None)
+        );
+        assert_eq!(
+            (OP36_KEYS[4].hand, OP36_KEYS[4].column),
+            (Hand::Left, Some(4))
+        );
+        assert_eq!(
+            (OP36_KEYS[5].hand, OP36_KEYS[5].column),
+            (Hand::Right, Some(4))
+        );
+        assert_eq!(
+            (OP36_KEYS[9].hand, OP36_KEYS[9].column),
+            (Hand::Right, Some(0))
+        );
+        assert_eq!(
+            (OP36_KEYS[30].hand, OP36_KEYS[30].thumb),
+            (Hand::Left, Some(0))
+        ); // outer
+        assert_eq!(
+            (OP36_KEYS[32].hand, OP36_KEYS[32].thumb),
+            (Hand::Left, Some(2))
+        ); // inner
+        assert_eq!(
+            (OP36_KEYS[33].hand, OP36_KEYS[33].thumb),
+            (Hand::Right, Some(2))
+        ); // inner
+        assert_eq!(
+            (OP36_KEYS[35].hand, OP36_KEYS[35].thumb),
+            (Hand::Right, Some(0))
+        ); // outer
     }
 
     #[test]

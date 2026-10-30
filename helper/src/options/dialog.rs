@@ -8,25 +8,27 @@ use windows::Win32::Graphics::Gdi::{COLOR_BTNFACE, HBRUSH, HFONT};
 /// `TBM_GETPOS` = `WM_USER`; the crate omits it.
 const TBM_GETPOS: u32 = 0x0400;
 use windows::Win32::UI::Controls::{
-    BST_CHECKED, HKM_GETHOTKEY, HKM_SETHOTKEY, ICC_BAR_CLASSES, ICC_HOTKEY_CLASS, ICC_STANDARD_CLASSES,
-    INITCOMMONCONTROLSEX, InitCommonControlsEx, TBM_SETPOS, TBM_SETRANGE,
+    BST_CHECKED, HKM_GETHOTKEY, HKM_SETHOTKEY, ICC_BAR_CLASSES, ICC_HOTKEY_CLASS,
+    ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX, InitCommonControlsEx, TBM_SETPOS, TBM_SETRANGE,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    WS_DISABLED,
-    BM_GETCHECK, BM_SETCHECK, BS_AUTOCHECKBOX, BS_AUTORADIOBUTTON, BS_GROUPBOX, BS_PUSHBUTTON, CB_ADDSTRING,
-    CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST, CREATESTRUCTW, CS_HREDRAW,
-    CS_VREDRAW, CreateWindowExW, DefWindowProcW, DestroyWindow, EN_CHANGE, ES_AUTOHSCROLL, GWLP_USERDATA,
-    GetWindowLongPtrW, GetWindowTextW, HMENU, RegisterClassW, SW_SHOW, SendMessageW, SetWindowLongPtrW,
-    SetWindowTextW, ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_HSCROLL, WM_NCCREATE,
-    WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_GROUP, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
-    WS_VSCROLL, BN_CLICKED, SetForegroundWindow,
+    BM_GETCHECK, BM_SETCHECK, BN_CLICKED, BS_AUTOCHECKBOX, BS_AUTORADIOBUTTON, BS_GROUPBOX,
+    BS_PUSHBUTTON, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBN_SELCHANGE, CBS_DROPDOWNLIST,
+    CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DestroyWindow,
+    EN_CHANGE, ES_AUTOHSCROLL, GWLP_USERDATA, GetWindowLongPtrW, GetWindowTextW, HMENU,
+    RegisterClassW, SW_SHOW, SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowTextW,
+    ShowWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_HSCROLL, WM_NCCREATE,
+    WM_NCDESTROY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_DISABLED, WS_GROUP, WS_SYSMENU,
+    WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
 };
 use windows::core::PCWSTR;
 
-use super::{absent_monitor, combo_to_monitor, control_word_to_hotkey, hotkey_to_control_word, monitor_to_combo, scale_to_slider,
-    slider_to_scale, SCALE_MAX_PCT, SCALE_MIN_PCT};
+use super::{
+    SCALE_MAX_PCT, SCALE_MIN_PCT, absent_monitor, combo_to_monitor, control_word_to_hotkey,
+    hotkey_to_control_word, monitor_to_combo, scale_to_slider, slider_to_scale,
+};
 use crate::overlay::placement::MonitorInfo;
 use crate::settings::{Anchor, DisplayMode, Settings, Theme};
 use crate::win::{hinstance, to_wide};
@@ -85,7 +87,10 @@ const ANCHORS: [Anchor; 9] = [
 /// What the dialog asks the application to do.
 pub enum DialogAction {
     /// Preview or apply these settings (`save` says whether to persist them).
-    Settings { settings: Settings, save: bool },
+    Settings {
+        settings: Settings,
+        save: bool,
+    },
     ReloadKeymap,
     /// Flash the bundled firmware onto this half (the user double-taps its reset button).
     FlashHalf(crate::vial::protocol::Side),
@@ -185,8 +190,18 @@ impl OptionsDialog {
             };
             let icon = crate::tray::load_icon("icon_on.ico", crate::tray::ICON_ON);
             // WM_SETICON for both the big (Alt-Tab) and small (title bar) icon.
-            SendMessageW(hwnd, windows::Win32::UI::WindowsAndMessaging::WM_SETICON, Some(WPARAM(1)), Some(LPARAM(icon.0 as isize)));
-            SendMessageW(hwnd, windows::Win32::UI::WindowsAndMessaging::WM_SETICON, Some(WPARAM(0)), Some(LPARAM(icon.0 as isize)));
+            SendMessageW(
+                hwnd,
+                windows::Win32::UI::WindowsAndMessaging::WM_SETICON,
+                Some(WPARAM(1)),
+                Some(LPARAM(icon.0 as isize)),
+            );
+            SendMessageW(
+                hwnd,
+                windows::Win32::UI::WindowsAndMessaging::WM_SETICON,
+                Some(WPARAM(0)),
+                Some(LPARAM(icon.0 as isize)),
+            );
             let _ = ShowWindow(hwnd, SW_SHOW);
             let _ = SetForegroundWindow(hwnd);
             Some(OptionsDialog { hwnd })
@@ -228,7 +243,9 @@ impl OptionsDialog {
 
 fn child(parent: HWND, id: i32) -> HWND {
     // SAFETY: GetDlgItem on our own window.
-    unsafe { windows::Win32::UI::WindowsAndMessaging::GetDlgItem(Some(parent), id).unwrap_or_default() }
+    unsafe {
+        windows::Win32::UI::WindowsAndMessaging::GetDlgItem(Some(parent), id).unwrap_or_default()
+    }
 }
 
 fn state(hwnd: HWND) -> Option<&'static mut State> {
@@ -250,7 +267,19 @@ impl Layout {
 }
 
 /// Create one child control.
-fn make(parent: HWND, class: &str, text: &str, style: u32, id: i32, l: &Layout, x: i32, y: i32, w: i32, h: i32, font: HFONT) -> HWND {
+fn make(
+    parent: HWND,
+    class: &str,
+    text: &str,
+    style: u32,
+    id: i32,
+    l: &Layout,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    font: HFONT,
+) -> HWND {
     let class_w = to_wide(class);
     let text_w = to_wide(text);
     // SAFETY: standard child creation on our own window.
@@ -270,17 +299,27 @@ fn make(parent: HWND, class: &str, text: &str, style: u32, id: i32, l: &Layout, 
             None,
         )
         .unwrap_or_default();
-        SendMessageW(hwnd, WM_SETFONT, Some(WPARAM(font.0 as usize)), Some(LPARAM(1)));
+        SendMessageW(
+            hwnd,
+            WM_SETFONT,
+            Some(WPARAM(font.0 as usize)),
+            Some(LPARAM(1)),
+        );
         hwnd
     }
 }
 
 fn build(hwnd: HWND, st: &mut State) {
     use windows::Win32::Graphics::Gdi::CreateFontIndirectW;
-    use windows::Win32::UI::WindowsAndMessaging::{NONCLIENTMETRICSW, SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        NONCLIENTMETRICSW, SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        SystemParametersInfoW,
+    };
     // SAFETY: DPI query and font creation on our own window.
     let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
-    let l = Layout { scale: dpi as f32 / 96.0 };
+    let l = Layout {
+        scale: dpi as f32 / 96.0,
+    };
     // SAFETY: documented call with a sized struct; the font lives as long as the dialog.
     st.font = unsafe {
         let mut ncm = NONCLIENTMETRICSW {
@@ -306,16 +345,51 @@ fn build(hwnd: HWND, st: &mut State) {
     let static_ = |text: &str, x, y, w, h, id| make(hwnd, "STATIC", text, 0, id, &l, x, y, w, h, f);
 
     // ---- Display group ----
-    make(hwnd, "BUTTON", "Display", BS_GROUPBOX as u32, 0, &l, 10, 8, 330, 356, f);
+    make(
+        hwnd,
+        "BUTTON",
+        "Display",
+        BS_GROUPBOX as u32,
+        0,
+        &l,
+        10,
+        8,
+        330,
+        356,
+        f,
+    );
     static_("Monitor", 20, 32, 80, 20, 0);
-    let combo = make(hwnd, "COMBOBOX", "", CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | WS_TABSTOP.0, ID_MONITOR, &l, 110, 28, 220, 200, f);
+    let combo = make(
+        hwnd,
+        "COMBOBOX",
+        "",
+        CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | WS_TABSTOP.0,
+        ID_MONITOR,
+        &l,
+        110,
+        28,
+        220,
+        200,
+        f,
+    );
     add_combo_item(combo, "Primary monitor");
     for m in &st.monitors {
         let (l_, t, r, b) = m.work_area;
-        add_combo_item(combo, &format!("{} — {}×{}", m.name.trim_start_matches(r"\\.\"), r - l_, b - t));
+        add_combo_item(
+            combo,
+            &format!(
+                "{} — {}×{}",
+                m.name.trim_start_matches(r"\\.\"),
+                r - l_,
+                b - t
+            ),
+        );
     }
     if let Some(name) = absent_monitor(&s.monitor, &st.monitors) {
-        add_combo_item(combo, &format!("{} (not connected)", name.trim_start_matches(r"\\.\")));
+        add_combo_item(
+            combo,
+            &format!("{} (not connected)", name.trim_start_matches(r"\\.\")),
+        );
     }
     set_combo(combo, monitor_to_combo(&s.monitor, &st.monitors));
 
@@ -323,83 +397,436 @@ fn build(hwnd: HWND, st: &mut State) {
     for (i, _) in ANCHORS.iter().enumerate() {
         let (col, row) = (i % 3, i / 3);
         let style = BS_AUTORADIOBUTTON as u32 | WS_TABSTOP.0 | if i == 0 { WS_GROUP.0 } else { 0 };
-        let b = make(hwnd, "BUTTON", "", style, ID_ANCHOR_BASE + i as i32, &l, 110 + col as i32 * 26, 58 + row as i32 * 22, 20, 20, f);
+        let b = make(
+            hwnd,
+            "BUTTON",
+            "",
+            style,
+            ID_ANCHOR_BASE + i as i32,
+            &l,
+            110 + col as i32 * 26,
+            58 + row as i32 * 22,
+            20,
+            20,
+            f,
+        );
         if ANCHORS[i] == s.anchor {
             // SAFETY: own control.
             unsafe { SendMessageW(b, BM_SETCHECK, Some(WPARAM(BST_CHECKED.0 as usize)), None) };
         }
     }
     static_("Offset X / Y", 200, 62, 90, 20, 0);
-    make(hwnd, "EDIT", &s.offset.0.to_string(), ES_AUTOHSCROLL as u32 | WS_TABSTOP.0 | 0x0080_0000 /*WS_BORDER*/, ID_OFFSET_X, &l, 200, 84, 60, 22, f);
-    make(hwnd, "EDIT", &s.offset.1.to_string(), ES_AUTOHSCROLL as u32 | WS_TABSTOP.0 | 0x0080_0000, ID_OFFSET_Y, &l, 268, 84, 60, 22, f);
+    make(
+        hwnd,
+        "EDIT",
+        &s.offset.0.to_string(),
+        ES_AUTOHSCROLL as u32 | WS_TABSTOP.0 | 0x0080_0000, /*WS_BORDER*/
+        ID_OFFSET_X,
+        &l,
+        200,
+        84,
+        60,
+        22,
+        f,
+    );
+    make(
+        hwnd,
+        "EDIT",
+        &s.offset.1.to_string(),
+        ES_AUTOHSCROLL as u32 | WS_TABSTOP.0 | 0x0080_0000,
+        ID_OFFSET_Y,
+        &l,
+        268,
+        84,
+        60,
+        22,
+        f,
+    );
     static_("Ctrl+Alt+Arrows nudge 10 px", 200, 112, 140, 20, 0);
 
     static_("Size", 20, 150, 80, 20, 0);
-    let scale = make(hwnd, "msctls_trackbar32", "", WS_TABSTOP.0 | 0x0001 /*TBS_AUTOTICKS*/, ID_SCALE, &l, 110, 146, 180, 28, f);
-    set_range(scale, SCALE_MIN_PCT, SCALE_MAX_PCT, scale_to_slider(s.scale));
-    static_(&format!("{} %", scale_to_slider(s.scale)), 295, 150, 40, 20, ID_SCALE_LABEL);
+    let scale = make(
+        hwnd,
+        "msctls_trackbar32",
+        "",
+        WS_TABSTOP.0 | 0x0001, /*TBS_AUTOTICKS*/
+        ID_SCALE,
+        &l,
+        110,
+        146,
+        180,
+        28,
+        f,
+    );
+    set_range(
+        scale,
+        SCALE_MIN_PCT,
+        SCALE_MAX_PCT,
+        scale_to_slider(s.scale),
+    );
+    static_(
+        &format!("{} %", scale_to_slider(s.scale)),
+        295,
+        150,
+        40,
+        20,
+        ID_SCALE_LABEL,
+    );
 
     static_("Opacity", 20, 182, 80, 20, 0);
-    let op = make(hwnd, "msctls_trackbar32", "", WS_TABSTOP.0 | 0x0001, ID_OPACITY, &l, 110, 178, 180, 28, f);
+    let op = make(
+        hwnd,
+        "msctls_trackbar32",
+        "",
+        WS_TABSTOP.0 | 0x0001,
+        ID_OPACITY,
+        &l,
+        110,
+        178,
+        180,
+        28,
+        f,
+    );
     set_range(op, 10, 100, (s.opacity * 100.0).round() as i32);
-    static_(&format!("{} %", (s.opacity * 100.0).round() as i32), 295, 182, 40, 20, ID_OPACITY_LABEL);
+    static_(
+        &format!("{} %", (s.opacity * 100.0).round() as i32),
+        295,
+        182,
+        40,
+        20,
+        ID_OPACITY_LABEL,
+    );
 
     static_("Show", 20, 216, 80, 20, 0);
-    let mode = make(hwnd, "COMBOBOX", "", CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | WS_TABSTOP.0, ID_MODE, &l, 110, 212, 220, 120, f);
+    let mode = make(
+        hwnd,
+        "COMBOBOX",
+        "",
+        CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | WS_TABSTOP.0,
+        ID_MODE,
+        &l,
+        110,
+        212,
+        220,
+        120,
+        f,
+    );
     add_combo_item(mode, "Always (while enabled)");
     add_combo_item(mode, "Only while a layer or modifier is held");
-    set_combo(mode, if s.display_mode == DisplayMode::Always { 0 } else { 1 });
+    set_combo(
+        mode,
+        if s.display_mode == DisplayMode::Always {
+            0
+        } else {
+            1
+        },
+    );
 
     static_("Toggle hotkey", 20, 248, 85, 20, 0);
-    let hk = make(hwnd, "msctls_hotkey32", "", WS_TABSTOP.0 | 0x0080_0000, ID_HOTKEY, &l, 110, 244, 220, 24, f);
+    let hk = make(
+        hwnd,
+        "msctls_hotkey32",
+        "",
+        WS_TABSTOP.0 | 0x0080_0000,
+        ID_HOTKEY,
+        &l,
+        110,
+        244,
+        220,
+        24,
+        f,
+    );
     // SAFETY: own control.
-    unsafe { SendMessageW(hk, HKM_SETHOTKEY, Some(WPARAM(hotkey_to_control_word(&s.hotkey) as usize)), None) };
-    let en = make(hwnd, "BUTTON", "Show Latin hint on non-Latin layouts", BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0, ID_EN_HINT, &l, 20, 276, 310, 22, f);
+    unsafe {
+        SendMessageW(
+            hk,
+            HKM_SETHOTKEY,
+            Some(WPARAM(hotkey_to_control_word(&s.hotkey) as usize)),
+            None,
+        )
+    };
+    let en = make(
+        hwnd,
+        "BUTTON",
+        "Show Latin hint on non-Latin layouts",
+        BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+        ID_EN_HINT,
+        &l,
+        20,
+        276,
+        310,
+        22,
+        f,
+    );
     set_check(en, s.show_en_hint);
     static_("Theme", 20, 306, 80, 20, 0);
-    let theme = make(hwnd, "COMBOBOX", "", CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | WS_TABSTOP.0, ID_THEME, &l, 110, 302, 220, 120, f);
+    let theme = make(
+        hwnd,
+        "COMBOBOX",
+        "",
+        CBS_DROPDOWNLIST as u32 | WS_VSCROLL.0 | WS_TABSTOP.0,
+        ID_THEME,
+        &l,
+        110,
+        302,
+        220,
+        120,
+        f,
+    );
     add_combo_item(theme, "Follow Windows");
     add_combo_item(theme, "Light");
     add_combo_item(theme, "Dark");
-    set_combo(theme, match s.theme { Theme::Auto => 0, Theme::Light => 1, Theme::Dark => 2 });
-    let reserve = make(hwnd, "BUTTON", "Reserve screen space for maximized windows", BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0, ID_RESERVE, &l, 20, 332, 320, 22, f);
+    set_combo(
+        theme,
+        match s.theme {
+            Theme::Auto => 0,
+            Theme::Light => 1,
+            Theme::Dark => 2,
+        },
+    );
+    let reserve = make(
+        hwnd,
+        "BUTTON",
+        "Reserve screen space for maximized windows",
+        BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+        ID_RESERVE,
+        &l,
+        20,
+        332,
+        320,
+        22,
+        f,
+    );
     set_check(reserve, s.reserve_space);
 
     // ---- Behaviour group ----
-    make(hwnd, "BUTTON", "Behaviour", BS_GROUPBOX as u32, 0, &l, 350, 8, 300, 140, f);
-    let auto = make(hwnd, "BUTTON", "Start with Windows", BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0, ID_AUTOSTART, &l, 360, 30, 280, 22, f);
+    make(
+        hwnd,
+        "BUTTON",
+        "Behaviour",
+        BS_GROUPBOX as u32,
+        0,
+        &l,
+        350,
+        8,
+        300,
+        140,
+        f,
+    );
+    let auto = make(
+        hwnd,
+        "BUTTON",
+        "Start with Windows",
+        BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+        ID_AUTOSTART,
+        &l,
+        360,
+        30,
+        280,
+        22,
+        f,
+    );
     set_check(auto, s.autostart);
-    let find = make(hwnd, "BUTTON", "Find a key when I press one", BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0, ID_FIND, &l, 360, 56, 280, 22, f);
+    let find = make(
+        hwnd,
+        "BUTTON",
+        "Find a key when I press one",
+        BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+        ID_FIND,
+        &l,
+        360,
+        56,
+        280,
+        22,
+        f,
+    );
     set_check(find, s.find_key);
     static_("Show for", 380, 86, 60, 20, 0);
-    let secs = make(hwnd, "msctls_trackbar32", "", WS_TABSTOP.0 | 0x0001, ID_FIND_SECS, &l, 440, 82, 150, 28, f);
+    let secs = make(
+        hwnd,
+        "msctls_trackbar32",
+        "",
+        WS_TABSTOP.0 | 0x0001,
+        ID_FIND_SECS,
+        &l,
+        440,
+        82,
+        150,
+        28,
+        f,
+    );
     set_range(secs, 5, 50, (s.find_key_secs * 10.0).round() as i32);
-    static_(&format!("{:.1} s", s.find_key_secs), 595, 86, 50, 20, ID_FIND_SECS_LABEL);
-    let upd = make(hwnd, "BUTTON", "Check for updates automatically", BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0, ID_UPDATE_CHECK, &l, 360, 114, 280, 22, f);
+    static_(
+        &format!("{:.1} s", s.find_key_secs),
+        595,
+        86,
+        50,
+        20,
+        ID_FIND_SECS_LABEL,
+    );
+    let upd = make(
+        hwnd,
+        "BUTTON",
+        "Check for updates automatically",
+        BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+        ID_UPDATE_CHECK,
+        &l,
+        360,
+        114,
+        280,
+        22,
+        f,
+    );
     set_check(upd, s.update_check);
 
     // ---- Keyboard group ----
-    make(hwnd, "BUTTON", "Keyboard", BS_GROUPBOX as u32, 0, &l, 350, 156, 300, 152, f);
+    make(
+        hwnd,
+        "BUTTON",
+        "Keyboard",
+        BS_GROUPBOX as u32,
+        0,
+        &l,
+        350,
+        156,
+        300,
+        152,
+        f,
+    );
     static_(&st.status_text, 360, 178, 280, 90, ID_STATUS);
-    make(hwnd, "BUTTON", "Reload keymap", BS_PUSHBUTTON as u32 | WS_TABSTOP.0, ID_RELOAD, &l, 360, 272, 130, 26, f);
+    make(
+        hwnd,
+        "BUTTON",
+        "Reload keymap",
+        BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+        ID_RELOAD,
+        &l,
+        360,
+        272,
+        130,
+        26,
+        f,
+    );
 
     // ---- Firmware group (full width under the others) ----
-    make(hwnd, "BUTTON", "Firmware and updates", BS_GROUPBOX as u32, 0, &l, 10, 372, 640, 144, f);
+    make(
+        hwnd,
+        "BUTTON",
+        "Firmware and updates",
+        BS_GROUPBOX as u32,
+        0,
+        &l,
+        10,
+        372,
+        640,
+        144,
+        f,
+    );
     static_(&st.firmware.left, 20, 394, 300, 20, ID_FW_LEFT);
     static_(&st.firmware.right, 20, 416, 300, 20, ID_FW_RIGHT);
     static_(&st.firmware.bundled, 20, 438, 300, 20, ID_FW_BUNDLED);
-    let flash_style = BS_PUSHBUTTON as u32 | WS_TABSTOP.0 | if st.firmware.can_flash { 0 } else { WS_DISABLED.0 };
-    make(hwnd, "BUTTON", "Flash left half…", flash_style, ID_FW_FLASH_LEFT, &l, 340, 392, 140, 26, f);
-    make(hwnd, "BUTTON", "Flash right half…", flash_style, ID_FW_FLASH_RIGHT, &l, 490, 392, 150, 26, f);
-    make(hwnd, "BUTTON", "Cancel flash", BS_PUSHBUTTON as u32 | WS_TABSTOP.0 | WS_DISABLED.0, ID_FW_CANCEL, &l, 340, 424, 140, 26, f);
+    let flash_style = BS_PUSHBUTTON as u32
+        | WS_TABSTOP.0
+        | if st.firmware.can_flash {
+            0
+        } else {
+            WS_DISABLED.0
+        };
+    make(
+        hwnd,
+        "BUTTON",
+        "Flash left half…",
+        flash_style,
+        ID_FW_FLASH_LEFT,
+        &l,
+        340,
+        392,
+        140,
+        26,
+        f,
+    );
+    make(
+        hwnd,
+        "BUTTON",
+        "Flash right half…",
+        flash_style,
+        ID_FW_FLASH_RIGHT,
+        &l,
+        490,
+        392,
+        150,
+        26,
+        f,
+    );
+    make(
+        hwnd,
+        "BUTTON",
+        "Cancel flash",
+        BS_PUSHBUTTON as u32 | WS_TABSTOP.0 | WS_DISABLED.0,
+        ID_FW_CANCEL,
+        &l,
+        340,
+        424,
+        140,
+        26,
+        f,
+    );
     static_(&st.firmware.note, 20, 462, 620, 22, ID_FW_STATUS);
     static_(&st.firmware.update_line, 20, 488, 460, 20, ID_UPDATE_LINE);
-    make(hwnd, "BUTTON", "Update now", BS_PUSHBUTTON as u32 | WS_TABSTOP.0, ID_UPDATE_NOW, &l, 490, 484, 150, 26, f);
+    make(
+        hwnd,
+        "BUTTON",
+        "Update now",
+        BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+        ID_UPDATE_NOW,
+        &l,
+        490,
+        484,
+        150,
+        26,
+        f,
+    );
 
     // ---- Buttons ----
-    make(hwnd, "BUTTON", "OK", BS_PUSHBUTTON as u32 | WS_TABSTOP.0, ID_OK, &l, 400, 526, 80, 28, f);
-    make(hwnd, "BUTTON", "Cancel", BS_PUSHBUTTON as u32 | WS_TABSTOP.0, ID_CANCEL, &l, 486, 526, 80, 28, f);
-    make(hwnd, "BUTTON", "Apply", BS_PUSHBUTTON as u32 | WS_TABSTOP.0, ID_APPLY, &l, 572, 526, 78, 28, f);
+    make(
+        hwnd,
+        "BUTTON",
+        "OK",
+        BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+        ID_OK,
+        &l,
+        400,
+        526,
+        80,
+        28,
+        f,
+    );
+    make(
+        hwnd,
+        "BUTTON",
+        "Cancel",
+        BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+        ID_CANCEL,
+        &l,
+        486,
+        526,
+        80,
+        28,
+        f,
+    );
+    make(
+        hwnd,
+        "BUTTON",
+        "Apply",
+        BS_PUSHBUTTON as u32 | WS_TABSTOP.0,
+        ID_APPLY,
+        &l,
+        572,
+        526,
+        78,
+        28,
+        f,
+    );
 
     // SAFETY: own window.
     unsafe {
@@ -410,7 +837,8 @@ fn build(hwnd: HWND, st: &mut State) {
             0,
             l.px(660) + l.px(16),
             l.px(564) + l.px(40),
-            windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER,
+            windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE
+                | windows::Win32::UI::WindowsAndMessaging::SWP_NOZORDER,
         );
     }
     st.suppress = false;
@@ -435,7 +863,12 @@ fn get_combo(combo: HWND) -> usize {
 fn set_range(bar: HWND, min: i32, max: i32, pos: i32) {
     // SAFETY: own control.
     unsafe {
-        SendMessageW(bar, TBM_SETRANGE, Some(WPARAM(1)), Some(LPARAM(((max as isize) << 16) | (min as isize & 0xFFFF))));
+        SendMessageW(
+            bar,
+            TBM_SETRANGE,
+            Some(WPARAM(1)),
+            Some(LPARAM(((max as isize) << 16) | (min as isize & 0xFFFF))),
+        );
         SendMessageW(bar, TBM_SETPOS, Some(WPARAM(1)), Some(LPARAM(pos as isize)));
     }
 }
@@ -447,7 +880,14 @@ fn get_pos(bar: HWND) -> i32 {
 
 fn set_check(button: HWND, on: bool) {
     // SAFETY: own control.
-    unsafe { SendMessageW(button, BM_SETCHECK, Some(WPARAM(if on { BST_CHECKED.0 as usize } else { 0 })), None) };
+    unsafe {
+        SendMessageW(
+            button,
+            BM_SETCHECK,
+            Some(WPARAM(if on { BST_CHECKED.0 as usize } else { 0 })),
+            None,
+        )
+    };
 }
 
 fn get_check(button: HWND) -> bool {
@@ -474,7 +914,11 @@ fn set_text(hwnd: HWND, id: i32, text: &str) {
 /// Read every control into a `Settings` (visible flag and move-hotkey modifiers are kept as they were).
 fn settings_from_controls(hwnd: HWND, st: &State) -> Settings {
     let mut s = st.original.clone();
-    s.monitor = combo_to_monitor(get_combo(child(hwnd, ID_MONITOR)), &st.monitors, &st.original.monitor);
+    s.monitor = combo_to_monitor(
+        get_combo(child(hwnd, ID_MONITOR)),
+        &st.monitors,
+        &st.original.monitor,
+    );
     for (i, anchor) in ANCHORS.iter().enumerate() {
         if get_check(child(hwnd, ID_ANCHOR_BASE + i as i32)) {
             s.anchor = *anchor;
@@ -486,7 +930,11 @@ fn settings_from_controls(hwnd: HWND, st: &State) -> Settings {
     );
     s.scale = slider_to_scale(get_pos(child(hwnd, ID_SCALE)));
     s.opacity = get_pos(child(hwnd, ID_OPACITY)) as f32 / 100.0;
-    s.display_mode = if get_combo(child(hwnd, ID_MODE)) == 0 { DisplayMode::Always } else { DisplayMode::WhileHeld };
+    s.display_mode = if get_combo(child(hwnd, ID_MODE)) == 0 {
+        DisplayMode::Always
+    } else {
+        DisplayMode::WhileHeld
+    };
     // SAFETY: own control.
     let word = unsafe { SendMessageW(child(hwnd, ID_HOTKEY), HKM_GETHOTKEY, None, None).0 as u32 };
     if word & 0xFF != 0 {
@@ -507,9 +955,21 @@ fn settings_from_controls(hwnd: HWND, st: &State) -> Settings {
 }
 
 fn refresh_labels(hwnd: HWND) {
-    set_text(hwnd, ID_SCALE_LABEL, &format!("{} %", get_pos(child(hwnd, ID_SCALE))));
-    set_text(hwnd, ID_OPACITY_LABEL, &format!("{} %", get_pos(child(hwnd, ID_OPACITY))));
-    set_text(hwnd, ID_FIND_SECS_LABEL, &format!("{:.1} s", get_pos(child(hwnd, ID_FIND_SECS)) as f32 / 10.0));
+    set_text(
+        hwnd,
+        ID_SCALE_LABEL,
+        &format!("{} %", get_pos(child(hwnd, ID_SCALE))),
+    );
+    set_text(
+        hwnd,
+        ID_OPACITY_LABEL,
+        &format!("{} %", get_pos(child(hwnd, ID_OPACITY))),
+    );
+    set_text(
+        hwnd,
+        ID_FIND_SECS_LABEL,
+        &format!("{:.1} s", get_pos(child(hwnd, ID_FIND_SECS)) as f32 / 10.0),
+    );
 }
 
 fn emit(hwnd: HWND, st: &mut State, action: DialogAction) -> bool {
@@ -529,7 +989,14 @@ fn preview(hwnd: HWND) {
     }
     refresh_labels(hwnd);
     let settings = settings_from_controls(hwnd, st);
-    emit(hwnd, st, DialogAction::Settings { settings, save: false });
+    emit(
+        hwnd,
+        st,
+        DialogAction::Settings {
+            settings,
+            save: false,
+        },
+    );
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -555,7 +1022,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                         let mut ok = true;
                         if let Some(st) = state(hwnd) {
                             let settings = settings_from_controls(hwnd, st);
-                            ok = emit(hwnd, st, DialogAction::Settings { settings: settings.clone(), save: true });
+                            ok = emit(
+                                hwnd,
+                                st,
+                                DialogAction::Settings {
+                                    settings: settings.clone(),
+                                    save: true,
+                                },
+                            );
                             if ok {
                                 st.original = settings;
                             }
@@ -568,7 +1042,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     ID_CANCEL | IDCANCEL_STD => {
                         if let Some(st) = state(hwnd) {
                             let original = st.original.clone();
-                            let _ = emit(hwnd, st, DialogAction::Settings { settings: original, save: false });
+                            let _ = emit(
+                                hwnd,
+                                st,
+                                DialogAction::Settings {
+                                    settings: original,
+                                    save: false,
+                                },
+                            );
                         }
                         let _ = DestroyWindow(hwnd);
                     }
@@ -597,7 +1078,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                             let _ = emit(hwnd, st, DialogAction::UpdateNow);
                         }
                     }
-                    _ if code == BN_CLICKED || code == CBN_SELCHANGE || code == EN_CHANGE as u32 => preview(hwnd),
+                    _ if code == BN_CLICKED
+                        || code == CBN_SELCHANGE
+                        || code == EN_CHANGE as u32 =>
+                    {
+                        preview(hwnd)
+                    }
                     _ => {}
                 }
                 LRESULT(0)
@@ -605,7 +1091,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             WM_CLOSE => {
                 if let Some(st) = state(hwnd) {
                     let original = st.original.clone();
-                    let _ = emit(hwnd, st, DialogAction::Settings { settings: original, save: false });
+                    let _ = emit(
+                        hwnd,
+                        st,
+                        DialogAction::Settings {
+                            settings: original,
+                            save: false,
+                        },
+                    );
                 }
                 let _ = DestroyWindow(hwnd);
                 LRESULT(0)

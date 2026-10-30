@@ -1,5 +1,9 @@
 # OP36 Helper
 
+> Development repository. Releases ship from the public mirror
+> [yeroo/op36-helper](https://github.com/yeroo/op36-helper), produced by `tools/export-public.ps1`
+> (fresh tree, no history, no vendor binaries). Tag `vX.Y.Z` there to publish a release.
+
 A Windows tray app for the Ergohaven OmegaPoint36 split keyboard, plus a dual-role build of its RMK
 firmware.
 

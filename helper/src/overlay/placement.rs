@@ -17,21 +17,30 @@ pub struct MonitorInfo {
 /// Enumerate attached monitors with their work areas and DPI.
 pub fn monitors() -> Vec<MonitorInfo> {
     use windows::Win32::Foundation::{LPARAM, RECT};
-    use windows::core::BOOL;
     use windows::Win32::Graphics::Gdi::{
         EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW,
     };
+    use windows::core::BOOL;
     const MONITORINFOF_PRIMARY: u32 = 1;
     use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 
-    unsafe extern "system" fn cb(hmon: HMONITOR, _hdc: HDC, _rect: *mut RECT, lparam: LPARAM) -> BOOL {
+    unsafe extern "system" fn cb(
+        hmon: HMONITOR,
+        _hdc: HDC,
+        _rect: *mut RECT,
+        lparam: LPARAM,
+    ) -> BOOL {
         // SAFETY: lparam is the `*mut Vec<MonitorInfo>` passed below; info struct is sized.
         unsafe {
             let out = &mut *(lparam.0 as *mut Vec<MonitorInfo>);
             let mut info = MONITORINFOEXW::default();
             info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
             if GetMonitorInfoW(hmon, &mut info.monitorInfo).as_bool() {
-                let name_len = info.szDevice.iter().position(|c| *c == 0).unwrap_or(info.szDevice.len());
+                let name_len = info
+                    .szDevice
+                    .iter()
+                    .position(|c| *c == 0)
+                    .unwrap_or(info.szDevice.len());
                 let (mut dx, mut dy) = (96u32, 96u32);
                 let _ = GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
                 let r = info.monitorInfo.rcWork;
@@ -59,7 +68,11 @@ pub fn monitors() -> Vec<MonitorInfo> {
 #[cfg(test)] // only tests use this
 /// Top-left corner for an overlay of `size` on the monitor the settings ask for (primary when the
 /// named one is absent), honouring anchor and offset. Never mutates `settings`.
-pub fn place<'m>(settings: &Settings, size: (i32, i32), monitors: &'m [MonitorInfo]) -> (i32, i32, &'m MonitorInfo) {
+pub fn place<'m>(
+    settings: &Settings,
+    size: (i32, i32),
+    monitors: &'m [MonitorInfo],
+) -> (i32, i32, &'m MonitorInfo) {
     place_with_reserved(settings, size, monitors, None)
 }
 
@@ -139,7 +152,11 @@ mod tests {
         s.monitor = Some(r"\\.\DISPLAY9".to_string());
         let (_, _, m) = place(&s, (600, 300), &mons);
         assert_eq!(m.name, r"\\.\DISPLAY1");
-        assert_eq!(s.monitor.as_deref(), Some(r"\\.\DISPLAY9"), "settings untouched");
+        assert_eq!(
+            s.monitor.as_deref(),
+            Some(r"\\.\DISPLAY9"),
+            "settings untouched"
+        );
     }
 
     #[test]

@@ -54,7 +54,11 @@ pub fn key_rect(key: &PhysicalKey) -> KeyRect {
         (Some(c), _) => {
             let c = c as usize;
             let row = (key.row % 3) as f32;
-            (COL_X[c] + KEY / 2.0, ROW_Y0 + COL_DY[c] + row * PITCH + KEY / 2.0, 0.0)
+            (
+                COL_X[c] + KEY / 2.0,
+                ROW_Y0 + COL_DY[c] + row * PITCH + KEY / 2.0,
+                0.0,
+            )
         }
         (None, Some(t)) => {
             let (tx, ty) = THUMB[t as usize];
@@ -63,7 +67,12 @@ pub fn key_rect(key: &PhysicalKey) -> KeyRect {
         (None, None) => (0.0, 0.0, 0.0),
     };
     match key.hand {
-        Hand::Left => KeyRect { cx: lx, cy, size: KEY, rot_deg: rot },
+        Hand::Left => KeyRect {
+            cx: lx,
+            cy,
+            size: KEY,
+            rot_deg: rot,
+        },
         Hand::Right => KeyRect {
             cx: mirror_x(lx),
             cy,
@@ -202,7 +211,11 @@ mod tests {
         assert_eq!(q.cy, p.cy);
         let enter = key_rect(&OP36_KEYS[33]);
         let space = key_rect(&OP36_KEYS[32]);
-        assert_eq!(space.cx + enter.cx, 2.0 * HALF_W + GAP, "inner thumbs mirror each other");
+        assert_eq!(
+            space.cx + enter.cx,
+            2.0 * HALF_W + GAP,
+            "inner thumbs mirror each other"
+        );
     }
 
     #[test]
@@ -212,7 +225,11 @@ mod tests {
             assert!(hull.len() >= 12, "stepped top, inner bulge, thumb bottom");
             for k in OP36_KEYS.iter().filter(|k| k.hand == hand) {
                 for (x, y) in key_rect(k).corners() {
-                    assert!(point_on_case(&hull, x, y), "key {} corner ({x},{y}) outside {hand:?} case", k.index);
+                    assert!(
+                        point_on_case(&hull, x, y),
+                        "key {} corner ({x},{y}) outside {hand:?} case",
+                        k.index
+                    );
                 }
             }
         }
@@ -228,7 +245,10 @@ mod tests {
         for (hand, (x, y, w, h)) in [(Hand::Left, l), (Hand::Right, r)] {
             let hull = case_outline(hand);
             for (px, py) in [(x, y), (x + w, y), (x, y + h), (x + w, y + h)] {
-                assert!(point_on_case(&hull, px, py), "{hand:?} glyph corner ({px},{py}) off the case");
+                assert!(
+                    point_on_case(&hull, px, py),
+                    "{hand:?} glyph corner ({px},{py}) off the case"
+                );
             }
         }
     }
@@ -239,7 +259,10 @@ mod tests {
             let hull = case_outline(hand);
             let (x, y, w, h) = battery_rect(hand);
             for (px, py) in [(x, y), (x + w, y), (x, y + h), (x + w, y + h)] {
-                assert!(point_on_case(&hull, px, py), "{hand:?} battery corner ({px},{py}) off the case");
+                assert!(
+                    point_on_case(&hull, px, py),
+                    "{hand:?} battery corner ({px},{py}) off the case"
+                );
             }
             // Level with G / H, clear of the inner column's keys.
             let inner_col = 4; // column indices are mirrored with the half: 4 is the inner column on both
@@ -249,7 +272,10 @@ mod tests {
                     .find(|k| k.hand == hand && k.row % 3 == 1 && k.column == Some(inner_col))
                     .expect("home-row inner key"),
             );
-            assert!((y + h / 2.0 - g.cy).abs() < 1.0, "battery centred on the home row");
+            assert!(
+                (y + h / 2.0 - g.cy).abs() < 1.0,
+                "battery centred on the home row"
+            );
             if hand == Hand::Left {
                 assert!(x >= g.cx + KEY / 2.0 + 4.0, "right of G");
             } else {
@@ -264,7 +290,10 @@ mod tests {
     #[test]
     fn panel_size_is_independent_of_recipe_rows() {
         assert_eq!(panel_size(1.0, 3), panel_size(1.0, 0));
-        assert!(GAP >= 3.0 * RECIPE_ROW_H + 100.0, "gap must hold three recipe rows of chips");
+        assert!(
+            GAP >= 3.0 * RECIPE_ROW_H + 100.0,
+            "gap must hold three recipe rows of chips"
+        );
         let (w, h) = panel_size(0.5, 0);
         assert_eq!(w, (2.0 * HALF_W + GAP + 2.0 * PAD) * 0.5);
         assert_eq!(h, (STATUS_H + HALF_H + PAD) * 0.5);

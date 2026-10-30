@@ -1,8 +1,8 @@
 //! Subscription state machine for the firmware's layer notifications (pure, time injected).
 
 use super::protocol::{
-    LayerState, Packet, Side, parse_firmware_build, parse_handoff, parse_layer_state, req_firmware_build, req_layer_state,
-    req_layer_subscribe,
+    LayerState, Packet, Side, parse_firmware_build, parse_handoff, parse_layer_state,
+    req_firmware_build, req_layer_state, req_layer_subscribe,
 };
 
 /// A layer-notify packet from the keyboard.
@@ -38,7 +38,12 @@ impl LayerClient {
         self.connected_at_ms = Some(now_ms);
         self.last_renew_ms = now_ms;
         self.supported = None;
-        vec![req_layer_subscribe(TTL_SECS), req_layer_state(), req_firmware_build(Side::Left), req_firmware_build(Side::Right)]
+        vec![
+            req_layer_subscribe(TTL_SECS),
+            req_layer_state(),
+            req_firmware_build(Side::Left),
+            req_firmware_build(Side::Right),
+        ]
     }
 
     /// A renewal packet when one is due.
@@ -53,7 +58,11 @@ impl LayerClient {
 
     /// Feed every packet read from the device; layer-state packets come back parsed.
     pub fn on_packet(&mut self, pkt: &Packet) -> Option<LayerPacket> {
-        let packet = match (parse_layer_state(pkt), parse_handoff(pkt), parse_firmware_build(pkt)) {
+        let packet = match (
+            parse_layer_state(pkt),
+            parse_handoff(pkt),
+            parse_firmware_build(pkt),
+        ) {
             (Some(state), _, _) => LayerPacket::State(state),
             (_, Some(side), _) => LayerPacket::Handoff(side),
             (_, _, Some((side, build))) => LayerPacket::Firmware(side, build),
@@ -87,14 +96,20 @@ mod tests {
         assert!(matches!(c.on_packet(&state), Some(LayerPacket::State(s)) if s.active == 2));
         let mut handoff = [0u8; 32];
         handoff[..3].copy_from_slice(&[0xE9, 0x02, 1]);
-        assert_eq!(c.on_packet(&handoff), Some(LayerPacket::Handoff(Side::Right)));
+        assert_eq!(
+            c.on_packet(&handoff),
+            Some(LayerPacket::Handoff(Side::Right))
+        );
         assert_eq!(c.supported, Some(true));
         let other = [0x08u8; 32];
         assert_eq!(c.on_packet(&other), None);
         let mut fw = [0u8; 32];
         fw[..4].copy_from_slice(&[0xE9, 0x03, 0, 2]);
         fw[4..6].copy_from_slice(b"v1");
-        assert_eq!(c.on_packet(&fw), Some(LayerPacket::Firmware(Side::Left, "v1".into())));
+        assert_eq!(
+            c.on_packet(&fw),
+            Some(LayerPacket::Firmware(Side::Left, "v1".into()))
+        );
     }
 
     #[test]
@@ -126,7 +141,9 @@ mod tests {
         assert_eq!(c.supported, None);
         let mut p = [0u8; 32];
         p[..3].copy_from_slice(&[0xE9, 0x01, 2]);
-        let Some(LayerPacket::State(state)) = c.on_packet(&p) else { panic!("layer state") };
+        let Some(LayerPacket::State(state)) = c.on_packet(&p) else {
+            panic!("layer state")
+        };
         assert_eq!(state.active, 2);
         assert_eq!(c.supported, Some(true));
         assert!(c.on_packet(&[0x11; 32]).is_none());

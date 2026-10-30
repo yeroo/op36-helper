@@ -48,7 +48,10 @@ pub const BLE_VIAL_REPORT_ID: u8 = 5;
 /// Windows exposes Bluetooth LE HID collections with the HOGP service UUID in the device path.
 pub fn transport_from_path(path: &str) -> Transport {
     let p = path.to_ascii_lowercase();
-    if p.contains("00001812-0000-1000-8000-00805f9b34fb") || p.contains("bthle") || p.contains("bthenum") {
+    if p.contains("00001812-0000-1000-8000-00805f9b34fb")
+        || p.contains("bthle")
+        || p.contains("bthenum")
+    {
         Transport::Ble
     } else {
         Transport::Usb
@@ -86,7 +89,10 @@ pub struct HidTransport {
 /// keyboard types over USB whenever it is enumerated, and the glyph must say so (a dual-role swap
 /// brings the bonded Bluetooth link up before the USB enumeration finishes).
 pub fn should_upgrade<'a>(current: Transport, paths: impl Iterator<Item = &'a str>) -> bool {
-    current == Transport::Ble && paths.into_iter().any(|p| transport_from_path(p) == Transport::Usb)
+    current == Transport::Ble
+        && paths
+            .into_iter()
+            .any(|p| transport_from_path(p) == Transport::Usb)
 }
 
 impl HidTransport {
@@ -94,7 +100,12 @@ impl HidTransport {
     pub fn usb_available(&self, api: &hidapi::HidApi) -> bool {
         let paths = api
             .device_list()
-            .filter(|d| d.vendor_id() == VID && d.product_id() == PID && d.usage_page() == USAGE_PAGE && d.usage() == USAGE)
+            .filter(|d| {
+                d.vendor_id() == VID
+                    && d.product_id() == PID
+                    && d.usage_page() == USAGE_PAGE
+                    && d.usage() == USAGE
+            })
             .map(|d| d.path().to_string_lossy().into_owned())
             .collect::<Vec<_>>();
         should_upgrade(self.transport, paths.iter().map(String::as_str))
@@ -104,9 +115,15 @@ impl HidTransport {
     pub fn open(api: &hidapi::HidApi) -> Option<HidTransport> {
         let mut candidates: Vec<_> = api
             .device_list()
-            .filter(|d| d.vendor_id() == VID && d.product_id() == PID && d.usage_page() == USAGE_PAGE && d.usage() == USAGE)
+            .filter(|d| {
+                d.vendor_id() == VID
+                    && d.product_id() == PID
+                    && d.usage_page() == USAGE_PAGE
+                    && d.usage() == USAGE
+            })
             .collect();
-        candidates.sort_by_key(|d| transport_from_path(&d.path().to_string_lossy()) == Transport::Ble);
+        candidates
+            .sort_by_key(|d| transport_from_path(&d.path().to_string_lossy()) == Transport::Ble);
         for info in candidates {
             let transport = transport_from_path(&info.path().to_string_lossy());
             match api.open_path(info.path()) {
@@ -124,7 +141,10 @@ impl HidTransport {
 impl VialTransport for HidTransport {
     fn write(&mut self, pkt: &Packet) -> Result<(), String> {
         let buf = frame_write(self.transport.report_id(), pkt);
-        self.device.write(&buf).map(|_| ()).map_err(|e| e.to_string())
+        self.device
+            .write(&buf)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     fn read(&mut self, timeout_ms: i32) -> Result<Option<Packet>, String> {
@@ -152,14 +172,28 @@ mod tests {
         let ble = r"\?\hid#{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&02e126_pid&0036#8&1&0#{4d1e55b2}";
         let usb = r"\?\hid#vid_e126&pid_0036&mi_02#7&1&0&0000#{4d1e55b2}";
         assert!(should_upgrade(Transport::Ble, [ble, usb].into_iter()));
-        assert!(!should_upgrade(Transport::Ble, [ble].into_iter()), "no USB path yet");
-        assert!(!should_upgrade(Transport::Usb, [ble, usb].into_iter()), "already on USB");
+        assert!(
+            !should_upgrade(Transport::Ble, [ble].into_iter()),
+            "no USB path yet"
+        );
+        assert!(
+            !should_upgrade(Transport::Usb, [ble, usb].into_iter()),
+            "already on USB"
+        );
     }
 
     #[test]
     fn ble_paths_are_recognised() {
-        assert_eq!(transport_from_path(r"\?\hid#{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&02e126_pid&0036&col05#9&1#{...}"), Transport::Ble);
-        assert_eq!(transport_from_path(r"\?\hid#vid_e126&pid_0036&mi_02#7&2edf967e&0&0000#{...}"), Transport::Usb);
+        assert_eq!(
+            transport_from_path(
+                r"\?\hid#{00001812-0000-1000-8000-00805f9b34fb}_dev_vid&02e126_pid&0036&col05#9&1#{...}"
+            ),
+            Transport::Ble
+        );
+        assert_eq!(
+            transport_from_path(r"\?\hid#vid_e126&pid_0036&mi_02#7&2edf967e&0&0000#{...}"),
+            Transport::Usb
+        );
     }
 
     #[test]

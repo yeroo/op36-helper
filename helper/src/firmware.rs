@@ -28,7 +28,10 @@ pub fn bundle_at(exe_dir: &Path) -> Option<Bundle> {
             return None;
         }
     }
-    let build = std::fs::read_to_string(dir.join(BUILD_COMMIT_FILE)).ok()?.trim().to_string();
+    let build = std::fs::read_to_string(dir.join(BUILD_COMMIT_FILE))
+        .ok()?
+        .trim()
+        .to_string();
     (!build.is_empty()).then_some(Bundle { dir, build })
 }
 
@@ -69,7 +72,8 @@ pub fn halves_differ(left: Option<&str>, right: Option<&str>) -> bool {
 /// The half to flash first: the one that lags the bundle; the left when nothing tells them apart.
 pub fn first_to_flash(left: Option<&str>, right: Option<&str>, bundled: &str) -> Side {
     match (half_status(left, bundled), half_status(right, bundled)) {
-        (HalfStatus::UpToDate, HalfStatus::UpdateAvailable) | (HalfStatus::UpToDate, HalfStatus::Unknown) => Side::Right,
+        (HalfStatus::UpToDate, HalfStatus::UpdateAvailable)
+        | (HalfStatus::UpToDate, HalfStatus::Unknown) => Side::Right,
         (HalfStatus::Unknown, HalfStatus::UpdateAvailable) => Side::Right,
         _ => Side::Left,
     }
@@ -89,7 +93,10 @@ pub enum FlashStep {
 
 impl FlashStep {
     pub fn is_final(&self) -> bool {
-        !matches!(self, FlashStep::WaitingForDrive | FlashStep::Copying(_) | FlashStep::WaitingForReboot)
+        !matches!(
+            self,
+            FlashStep::WaitingForDrive | FlashStep::Copying(_) | FlashStep::WaitingForReboot
+        )
     }
 
     /// The sentence the dialog shows for this step.
@@ -105,7 +112,10 @@ impl FlashStep {
             FlashStep::Copying(_) => format!("Copying the {name} half's firmware…"),
             FlashStep::WaitingForReboot => "Copied; waiting for the half to restart…".to_string(),
             FlashStep::Done => format!("Flashed the {name} half; it reconnects in a few seconds."),
-            FlashStep::TimedOut => format!("No bootloader drive appeared within {} s.", DRIVE_TIMEOUT_MS / 1000),
+            FlashStep::TimedOut => format!(
+                "No bootloader drive appeared within {} s.",
+                DRIVE_TIMEOUT_MS / 1000
+            ),
             FlashStep::Cancelled => "Flash cancelled.".to_string(),
             FlashStep::Failed(e) => format!("Flash failed: {e}"),
         }
@@ -131,10 +141,20 @@ pub struct FlashMachine {
 
 impl FlashMachine {
     pub fn new(side: Side, now_ms: u64) -> Self {
-        Self { side, started_ms: now_ms, copy_started_ms: 0, phase: Phase::Waiting }
+        Self {
+            side,
+            started_ms: now_ms,
+            copy_started_ms: 0,
+            phase: Phase::Waiting,
+        }
     }
 
-    pub fn step(&mut self, now_ms: u64, drive: Option<PathBuf>, copy_result: Option<Result<(), String>>) -> FlashStep {
+    pub fn step(
+        &mut self,
+        now_ms: u64,
+        drive: Option<PathBuf>,
+        copy_result: Option<Result<(), String>>,
+    ) -> FlashStep {
         match self.phase {
             Phase::Waiting => match drive {
                 Some(root) => {
@@ -160,7 +180,9 @@ impl FlashMachine {
                 None => FlashStep::Copying(drive.unwrap_or_default().join(uf2_for(self.side))),
             },
             Phase::Rebooting => {
-                if drive.is_none() || now_ms.saturating_sub(self.copy_started_ms) >= REBOOT_TIMEOUT_MS {
+                if drive.is_none()
+                    || now_ms.saturating_sub(self.copy_started_ms) >= REBOOT_TIMEOUT_MS
+                {
                     // The drive vanishing is the reboot; a drive that stays is still a copied file.
                     self.phase = Phase::Finished;
                     FlashStep::Done
@@ -181,10 +203,22 @@ mod tests {
 
     #[test]
     fn unknown_reported_build_is_not_an_update() {
-        assert_eq!(half_status(None, "v0.2.0-23-g74ed094c"), HalfStatus::Unknown);
-        assert_eq!(half_status(Some(""), "v0.2.0-23-g74ed094c"), HalfStatus::Unknown);
-        assert_eq!(half_status(Some("v0.2.0-23-g74ed094c"), "v0.2.0-23-g74ed094c"), HalfStatus::UpToDate);
-        assert_eq!(half_status(Some("v0.2.0-21-g4bf2fa45"), "v0.2.0-23-g74ed094c"), HalfStatus::UpdateAvailable);
+        assert_eq!(
+            half_status(None, "v0.2.0-23-g74ed094c"),
+            HalfStatus::Unknown
+        );
+        assert_eq!(
+            half_status(Some(""), "v0.2.0-23-g74ed094c"),
+            HalfStatus::Unknown
+        );
+        assert_eq!(
+            half_status(Some("v0.2.0-23-g74ed094c"), "v0.2.0-23-g74ed094c"),
+            HalfStatus::UpToDate
+        );
+        assert_eq!(
+            half_status(Some("v0.2.0-21-g4bf2fa45"), "v0.2.0-23-g74ed094c"),
+            HalfStatus::UpdateAvailable
+        );
     }
 
     #[test]
@@ -192,7 +226,9 @@ mod tests {
         assert!(is_nrf52840_uf2(
             "UF2 Bootloader 0.9.2 lib/nrfx\r\nModel: Nordic nRF52840 DK\r\nBoard-ID: nRF52840-pca10056-v1\r\n"
         ));
-        assert!(!is_nrf52840_uf2("UF2 Bootloader v3.0\r\nModel: Raspberry Pi RP2\r\nBoard-ID: RPI-RP2\r\n"));
+        assert!(!is_nrf52840_uf2(
+            "UF2 Bootloader v3.0\r\nModel: Raspberry Pi RP2\r\nBoard-ID: RPI-RP2\r\n"
+        ));
         assert!(!is_nrf52840_uf2(""));
     }
 
@@ -200,7 +236,10 @@ mod tests {
     fn differing_halves_are_flagged() {
         assert!(halves_differ(Some("a"), Some("b")));
         assert!(!halves_differ(Some("a"), Some("a")));
-        assert!(!halves_differ(None, Some("a")), "unknown is not a difference");
+        assert!(
+            !halves_differ(None, Some("a")),
+            "unknown is not a difference"
+        );
         assert_eq!(first_to_flash(Some("v23"), Some("v21"), "v23"), Side::Right);
         assert_eq!(first_to_flash(None, None, "v23"), Side::Left);
     }
@@ -213,8 +252,15 @@ mod tests {
             m.step(1_000, Some(PathBuf::from(r"E:\")), None),
             FlashStep::Copying(PathBuf::from(r"E:\op36_left.uf2"))
         );
-        assert_eq!(m.step(1_500, Some(PathBuf::from(r"E:\")), Some(Ok(()))), FlashStep::WaitingForReboot);
-        assert_eq!(m.step(2_000, None, None), FlashStep::Done, "drive vanished = rebooted");
+        assert_eq!(
+            m.step(1_500, Some(PathBuf::from(r"E:\")), Some(Ok(()))),
+            FlashStep::WaitingForReboot
+        );
+        assert_eq!(
+            m.step(2_000, None, None),
+            FlashStep::Done,
+            "drive vanished = rebooted"
+        );
         let mut m = FlashMachine::new(Side::Right, 0);
         assert_eq!(m.step(60_000, None, None), FlashStep::TimedOut);
         let mut m = FlashMachine::new(Side::Right, 0);
@@ -234,7 +280,11 @@ mod tests {
             std::fs::write(dir.path().join("firmware").join(f), b"x").unwrap();
         }
         assert!(bundle_at(dir.path()).is_none(), "no BUILD_COMMIT yet");
-        std::fs::write(dir.path().join("firmware/BUILD_COMMIT.txt"), "v0.2.0-23-g74ed094c\n").unwrap();
+        std::fs::write(
+            dir.path().join("firmware/BUILD_COMMIT.txt"),
+            "v0.2.0-23-g74ed094c\n",
+        )
+        .unwrap();
         let b = bundle_at(dir.path()).unwrap();
         assert_eq!(b.build, "v0.2.0-23-g74ed094c");
         assert_eq!(b.dir, dir.path().join("firmware"));

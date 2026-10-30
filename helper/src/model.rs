@@ -188,7 +188,10 @@ impl Model {
             ModelEvent::Mods(m) => self.mods = m,
             ModelEvent::Language(hkl) => self.hkl = hkl,
             ModelEvent::Key(press) => {
-                if let Some(hid) = press.hid.filter(|h| !crate::legend::hid_table::is_modifier_usage(*h)) {
+                if let Some(hid) = press
+                    .hid
+                    .filter(|h| !crate::legend::hid_table::is_modifier_usage(*h))
+                {
                     if self.settings.find_key {
                         let q = crate::find_key::FindQuery {
                             hid,
@@ -223,7 +226,11 @@ impl Model {
     /// `left: v…, right: v…` for the Options dialog; `unknown` for a half that has not reported.
     pub fn firmware_line(&self) -> String {
         let show = |b: &Option<String>| b.clone().unwrap_or_else(|| "unknown".to_string());
-        format!("left {}, right {}", show(&self.firmware[0]), show(&self.firmware[1]))
+        format!(
+            "left {}, right {}",
+            show(&self.firmware[0]),
+            show(&self.firmware[1])
+        )
     }
 
     /// `status_line_at` with the clock at zero.
@@ -256,12 +263,19 @@ impl Model {
     }
 
     /// `frame_at` with the clock at zero.
-    pub fn frame(&self, chars: &dyn crate::legend::chars::CharSource) -> crate::overlay::frame::Frame {
+    pub fn frame(
+        &self,
+        chars: &dyn crate::legend::chars::CharSource,
+    ) -> crate::overlay::frame::Frame {
         self.frame_at(chars, 0)
     }
 
     /// Resolve every key through the keymap and the legend rules into one drawable snapshot.
-    pub fn frame_at(&self, chars: &dyn crate::legend::chars::CharSource, now_ms: u64) -> crate::overlay::frame::Frame {
+    pub fn frame_at(
+        &self,
+        chars: &dyn crate::legend::chars::CharSource,
+        now_ms: u64,
+    ) -> crate::overlay::frame::Frame {
         use crate::legend::{LegendCtx, legend_for};
         use crate::overlay::frame::{Frame, KeyDraw};
         let active = self.layer.active;
@@ -287,17 +301,31 @@ impl Model {
         let mut recipes = Vec::new();
         if let Some(find) = &self.find {
             if find.candidates.is_empty() {
-                recipes.push(crate::find_key::not_found_recipe(find.query_hid, find.shift, self.hkl, chars));
+                recipes.push(crate::find_key::not_found_recipe(
+                    find.query_hid,
+                    find.shift,
+                    self.hkl,
+                    chars,
+                ));
             }
             for c in &find.candidates {
-                recipes.push(crate::find_key::recipe(&self.keymap, c, find.query_hid, self.hkl, chars));
+                recipes.push(crate::find_key::recipe(
+                    &self.keymap,
+                    c,
+                    find.query_hid,
+                    self.hkl,
+                    chars,
+                ));
                 let key = &crate::keymap::OP36_KEYS[c.key_index as usize];
                 let action = self.keymap.action(c.layer, key);
                 let draw = &mut keys[c.key_index as usize];
                 draw.halo = true;
                 draw.color_layer = c.layer;
                 if c.layer != active {
-                    let find_ctx = LegendCtx { active_layer: c.layer, ..ctx };
+                    let find_ctx = LegendCtx {
+                        active_layer: c.layer,
+                        ..ctx
+                    };
                     draw.legend = legend_for(&action, c.layer, key, &find_ctx, chars);
                 }
                 for (thumb, _) in crate::find_key::layer_path(&self.keymap, c.layer) {
@@ -308,7 +336,9 @@ impl Model {
         let battery = self.battery.filter(|_| self.connected);
         Frame {
             status: self.status_line_at(now_ms),
-            link: self.transport.filter(|_| self.connected && !self.is_switching(now_ms)),
+            link: self
+                .transport
+                .filter(|_| self.connected && !self.is_switching(now_ms)),
             link_side: if self.central_is_right {
                 crate::vial::protocol::Side::Right
             } else {
@@ -316,15 +346,14 @@ impl Model {
             },
             // The app holds a disconnect back for its offline grace; the swap shows from the packet on.
             switching: self.is_switching(now_ms),
-            offline_half: (self.connected && self.layer.peer_link_known && !self.layer.peer_linked).then(
-                || {
+            offline_half: (self.connected && self.layer.peer_link_known && !self.layer.peer_linked)
+                .then(|| {
                     if self.central_is_right {
                         crate::vial::protocol::Side::Left
                     } else {
                         crate::vial::protocol::Side::Right
                     }
-                },
-            ),
+                }),
             layer_color: active,
             keys,
             recipes,
@@ -349,7 +378,9 @@ mod tests {
 
     fn connected_model() -> Model {
         let mut m = Model::new(Settings::default(), None);
-        m.apply(ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Usb)));
+        m.apply(ModelEvent::Hid(HidEvent::Connected(
+            crate::vial::transport::Transport::Usb,
+        )));
         m
     }
 
@@ -418,8 +449,16 @@ mod tests {
         let f = m.frame(&FakeCharSource::default());
         assert_eq!(f.keys.len(), 36);
         assert!(f.keys.iter().all(|k| k.color_layer == 1));
-        assert_eq!(f.keys[31].legend.kind, KeyKind::HeldLayer, "left thumb MO(1) is the held key");
-        assert_eq!(f.keys[34].legend.kind, KeyKind::LayerKey(3), "right thumb leads to layer 3 from Nav");
+        assert_eq!(
+            f.keys[31].legend.kind,
+            KeyKind::HeldLayer,
+            "left thumb MO(1) is the held key"
+        );
+        assert_eq!(
+            f.keys[34].legend.kind,
+            KeyKind::LayerKey(3),
+            "right thumb leads to layer 3 from Nav"
+        );
         assert_eq!(f.status, "OP36 · EN · Nav · USB");
         assert_eq!(f.layer_color, 1);
         assert!(f.connected);
@@ -438,11 +477,19 @@ mod tests {
     fn frame_link_is_the_transport_while_connected() {
         use crate::legend::chars::FakeCharSource;
         let mut m = connected_model();
-        assert_eq!(m.frame(&FakeCharSource::default()).link, Some(crate::vial::transport::Transport::Usb));
+        assert_eq!(
+            m.frame(&FakeCharSource::default()).link,
+            Some(crate::vial::transport::Transport::Usb)
+        );
         m.apply(ModelEvent::Hid(HidEvent::Disconnected));
         assert_eq!(m.frame(&FakeCharSource::default()).link, None);
-        m.apply(ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Ble)));
-        assert_eq!(m.frame(&FakeCharSource::default()).link, Some(crate::vial::transport::Transport::Ble));
+        m.apply(ModelEvent::Hid(HidEvent::Connected(
+            crate::vial::transport::Transport::Ble,
+        )));
+        assert_eq!(
+            m.frame(&FakeCharSource::default()).link,
+            Some(crate::vial::transport::Transport::Ble)
+        );
     }
 
     #[test]
@@ -453,10 +500,21 @@ mod tests {
         m.apply_at(ModelEvent::Hid(HidEvent::Switching(Side::Right)), 1_000);
         m.apply_at(ModelEvent::Hid(HidEvent::Disconnected), 1_500);
         assert!(m.is_switching(4_000));
-        assert!(!m.status_line_at(4_000).contains("offline"), "{}", m.status_line_at(4_000));
-        assert!(m.status_line_at(4_000).contains("switching"), "{}", m.status_line_at(4_000));
+        assert!(
+            !m.status_line_at(4_000).contains("offline"),
+            "{}",
+            m.status_line_at(4_000)
+        );
+        assert!(
+            m.status_line_at(4_000).contains("switching"),
+            "{}",
+            m.status_line_at(4_000)
+        );
         assert!(m.frame_at(&FakeCharSource::default(), 4_000).switching);
-        m.apply_at(ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Usb)), 4_500);
+        m.apply_at(
+            ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Usb)),
+            4_500,
+        );
         assert!(!m.is_switching(4_600));
         let f = m.frame_at(&FakeCharSource::default(), 4_600);
         assert_eq!(f.link_side, Side::Right);
@@ -471,15 +529,28 @@ mod tests {
         let mut m = connected_model();
         m.apply_at(ModelEvent::Hid(HidEvent::Switching(Side::Right)), 1_000);
         let f = m.frame_at(&FakeCharSource::default(), 1_200);
-        assert!(f.switching, "still 'connected' from the app's point of view, but switching");
+        assert!(
+            f.switching,
+            "still 'connected' from the app's point of view, but switching"
+        );
         assert_eq!(f.link, None, "no link glyph while switching");
-        assert!(m.status_line_at(1_200).contains("switching"), "{}", m.status_line_at(1_200));
+        assert!(
+            m.status_line_at(1_200).contains("switching"),
+            "{}",
+            m.status_line_at(1_200)
+        );
         // Reconnect after the timeout: the announced side is stale and must not be applied.
         let mut m = connected_model();
         m.apply_at(ModelEvent::Hid(HidEvent::Switching(Side::Right)), 0);
         m.apply_at(ModelEvent::Hid(HidEvent::Disconnected), 100);
-        m.apply_at(ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Usb)), 20_000);
-        assert_eq!(m.frame_at(&FakeCharSource::default(), 20_000).link_side, Side::Left);
+        m.apply_at(
+            ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Usb)),
+            20_000,
+        );
+        assert_eq!(
+            m.frame_at(&FakeCharSource::default(), 20_000).link_side,
+            Side::Left
+        );
     }
 
     #[test]
@@ -487,11 +558,23 @@ mod tests {
         use crate::vial::protocol::Side;
         let mut m = connected_model();
         assert_eq!(m.firmware_line(), "left unknown, right unknown");
-        m.apply(ModelEvent::Hid(HidEvent::Firmware(Side::Left, "v0.2.0-22-gabc".into())));
-        m.apply(ModelEvent::Hid(HidEvent::Firmware(Side::Right, String::new())));
+        m.apply(ModelEvent::Hid(HidEvent::Firmware(
+            Side::Left,
+            "v0.2.0-22-gabc".into(),
+        )));
+        m.apply(ModelEvent::Hid(HidEvent::Firmware(
+            Side::Right,
+            String::new(),
+        )));
         assert_eq!(m.firmware_line(), "left v0.2.0-22-gabc, right unknown");
-        m.apply(ModelEvent::Hid(HidEvent::Firmware(Side::Right, "v0.2.0-22-gabc".into())));
-        assert_eq!(m.firmware_line(), "left v0.2.0-22-gabc, right v0.2.0-22-gabc");
+        m.apply(ModelEvent::Hid(HidEvent::Firmware(
+            Side::Right,
+            "v0.2.0-22-gabc".into(),
+        )));
+        assert_eq!(
+            m.firmware_line(),
+            "left v0.2.0-22-gabc, right v0.2.0-22-gabc"
+        );
         m.apply(ModelEvent::Hid(HidEvent::Disconnected));
         assert_eq!(m.firmware_line(), "left unknown, right unknown");
     }
@@ -504,7 +587,11 @@ mod tests {
         m.apply_at(ModelEvent::Hid(HidEvent::Disconnected), 100);
         assert!(m.is_switching(14_999));
         assert!(!m.is_switching(15_000));
-        assert!(m.status_line_at(15_000).ends_with("offline"), "{}", m.status_line_at(15_000));
+        assert!(
+            m.status_line_at(15_000).ends_with("offline"),
+            "{}",
+            m.status_line_at(15_000)
+        );
     }
 
     #[test]
@@ -512,10 +599,17 @@ mod tests {
         use crate::legend::chars::FakeCharSource;
         use crate::vial::protocol::Side;
         let mut m = connected_model();
-        let linked = LayerState { peer_linked: true, peer_link_known: true, ..Default::default() };
+        let linked = LayerState {
+            peer_linked: true,
+            peer_link_known: true,
+            ..Default::default()
+        };
         m.apply(ModelEvent::Hid(HidEvent::Layer(linked)));
         assert_eq!(m.frame(&FakeCharSource::default()).offline_half, None);
-        m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState { peer_linked: false, ..linked })));
+        m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState {
+            peer_linked: false,
+            ..linked
+        })));
         assert_eq!(
             m.frame(&FakeCharSource::default()).offline_half,
             Some(Side::Right),
@@ -528,11 +622,17 @@ mod tests {
             peer_link_known: true,
             ..Default::default()
         })));
-        assert_eq!(m.frame(&FakeCharSource::default()).offline_half, Some(Side::Left));
+        assert_eq!(
+            m.frame(&FakeCharSource::default()).offline_half,
+            Some(Side::Left)
+        );
         // Firmware without the feature, and an offline keyboard, draw both halves normally.
         m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState::default())));
         assert_eq!(m.frame(&FakeCharSource::default()).offline_half, None);
-        m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState { peer_linked: false, ..linked })));
+        m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState {
+            peer_linked: false,
+            ..linked
+        })));
         m.apply(ModelEvent::Hid(HidEvent::Disconnected));
         assert_eq!(m.frame(&FakeCharSource::default()).offline_half, None);
     }
@@ -554,17 +654,25 @@ mod tests {
     fn charging_flags_reach_the_frame_only_while_connected() {
         use crate::legend::chars::FakeCharSource;
         let mut m = connected_model();
-        m.apply(ModelEvent::Hid(HidEvent::Battery(crate::vial::protocol::BatteryHalves {
-            left: Some(85),
-            right: Some(72),
-            left_charging: true,
-            right_charging: false,
-        })));
+        m.apply(ModelEvent::Hid(HidEvent::Battery(
+            crate::vial::protocol::BatteryHalves {
+                left: Some(85),
+                right: Some(72),
+                left_charging: true,
+                right_charging: false,
+            },
+        )));
         let f = m.frame(&FakeCharSource::default());
-        assert_eq!((f.battery_left_charging, f.battery_right_charging), (true, false));
+        assert_eq!(
+            (f.battery_left_charging, f.battery_right_charging),
+            (true, false)
+        );
         m.apply(ModelEvent::Hid(HidEvent::Disconnected));
         let f = m.frame(&FakeCharSource::default());
-        assert_eq!((f.battery_left_charging, f.battery_right_charging), (false, false));
+        assert_eq!(
+            (f.battery_left_charging, f.battery_right_charging),
+            (false, false)
+        );
     }
 
     #[test]
@@ -572,18 +680,24 @@ mod tests {
         use crate::legend::chars::FakeCharSource;
         let mut m = connected_model();
         m.apply(ModelEvent::Language(crate::legend::chars::EN));
-        m.apply(ModelEvent::Hid(HidEvent::Battery(crate::vial::protocol::BatteryHalves {
-            left: Some(85),
-            right: Some(72),
-            left_charging: false,
-            right_charging: false,
-        })));
+        m.apply(ModelEvent::Hid(HidEvent::Battery(
+            crate::vial::protocol::BatteryHalves {
+                left: Some(85),
+                right: Some(72),
+                left_charging: false,
+                right_charging: false,
+            },
+        )));
         assert!(!m.status_line().contains('%'), "{}", m.status_line());
         let f = m.frame(&FakeCharSource::default());
         assert_eq!((f.battery_left, f.battery_right), (Some(85), Some(72)));
         m.apply(ModelEvent::Hid(HidEvent::Disconnected));
         let f = m.frame(&FakeCharSource::default());
-        assert_eq!((f.battery_left, f.battery_right), (None, None), "no battery while offline");
+        assert_eq!(
+            (f.battery_left, f.battery_right),
+            (None, None),
+            "no battery while offline"
+        );
     }
 
     #[test]
@@ -591,9 +705,15 @@ mod tests {
         let mut m = Model::new(Settings::default(), None);
         m.apply(ModelEvent::Language(crate::legend::chars::RU));
         assert_eq!(m.status_line(), "OP36 · RU · Layer 0 · offline");
-        m.apply(ModelEvent::Hid(HidEvent::Connected(crate::vial::transport::Transport::Usb)));
+        m.apply(ModelEvent::Hid(HidEvent::Connected(
+            crate::vial::transport::Transport::Usb,
+        )));
         m.apply(ModelEvent::Hid(HidEvent::LayerNotifySupported(false)));
-        assert!(m.status_line().ends_with("· USB · no layer data"), "{}", m.status_line());
+        assert!(
+            m.status_line().ends_with("· USB · no layer data"),
+            "{}",
+            m.status_line()
+        );
     }
 
     #[test]
@@ -601,10 +721,17 @@ mod tests {
         let mut m = Model::new(Settings::default(), None);
         m.settings.display_mode = crate::settings::DisplayMode::WhileHeld;
         assert!(!m.wants_visible(), "nothing held: hidden");
-        m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState { active: 1, mask: 0b10, ..Default::default() })));
+        m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState {
+            active: 1,
+            mask: 0b10,
+            ..Default::default()
+        })));
         assert!(m.wants_visible(), "layer held: shown");
         m.apply(ModelEvent::Hid(HidEvent::Layer(LayerState::default())));
-        m.apply(ModelEvent::Mods(Modifiers { ctrl: true, ..Default::default() }));
+        m.apply(ModelEvent::Mods(Modifiers {
+            ctrl: true,
+            ..Default::default()
+        }));
         assert!(m.wants_visible(), "modifier held: shown");
         m.apply(ModelEvent::Mods(Modifiers::default()));
         m.find = Some(FindResult::default());

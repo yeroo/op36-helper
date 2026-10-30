@@ -45,7 +45,10 @@ mod tests {
     fn auto_follows_windows_light_flag() {
         assert!(!is_dark(Theme::Auto, Some(true)));
         assert!(is_dark(Theme::Auto, Some(false)));
-        assert!(!is_dark(Theme::Auto, None), "unknown registry value means light");
+        assert!(
+            !is_dark(Theme::Auto, None),
+            "unknown registry value means light"
+        );
         assert!(is_dark(Theme::Dark, Some(true)));
         assert!(!is_dark(Theme::Light, Some(false)));
     }

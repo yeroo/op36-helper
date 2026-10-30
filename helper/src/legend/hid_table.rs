@@ -8,11 +8,17 @@ pub struct ScanCode {
 }
 
 const fn sc(code: u8) -> ScanCode {
-    ScanCode { code, extended: false }
+    ScanCode {
+        code,
+        extended: false,
+    }
 }
 
 const fn ext(code: u8) -> ScanCode {
-    ScanCode { code, extended: true }
+    ScanCode {
+        code,
+        extended: true,
+    }
 }
 
 /// `(hid usage, scan code)`; the first entry for a scan code wins in the reverse lookup.
@@ -80,9 +86,9 @@ const TABLE: &[(u8, ScanCode)] = &[
     (0x40, sc(0x41)),
     (0x41, sc(0x42)),
     (0x42, sc(0x43)),
-    (0x43, sc(0x44)), // F10
-    (0x44, sc(0x57)), // F11
-    (0x45, sc(0x58)), // F12
+    (0x43, sc(0x44)),  // F10
+    (0x44, sc(0x57)),  // F11
+    (0x45, sc(0x58)),  // F12
     (0x46, ext(0x37)), // Print Screen
     (0x47, sc(0x46)),  // Scroll Lock
     // Pause's real sequence is E1 1D 45; Num Lock (0x53) owns plain 0x45 for the reverse lookup,

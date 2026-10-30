@@ -6,7 +6,6 @@ use super::protocol::*;
 use super::transport::VialTransport;
 use crate::keymap::{KeyAction, Keymap};
 
-
 /// Send `req` and wait for its reply, discarding anything else (layer notifications, stale replies).
 pub fn request(t: &mut dyn VialTransport, req: &Packet) -> Result<Packet, String> {
     request_collect(t, req, &mut Vec::new())
@@ -14,7 +13,11 @@ pub fn request(t: &mut dyn VialTransport, req: &Packet) -> Result<Packet, String
 
 /// Like [`request`], but every other packet seen while waiting is pushed to `stray` so the caller
 /// can still act on it (a layer notification must not be lost behind a battery query).
-pub fn request_collect(t: &mut dyn VialTransport, req: &Packet, stray: &mut Vec<Packet>) -> Result<Packet, String> {
+pub fn request_collect(
+    t: &mut dyn VialTransport,
+    req: &Packet,
+    stray: &mut Vec<Packet>,
+) -> Result<Packet, String> {
     t.write(req)?;
     let timeout = t.reply_timeout();
     let deadline = Instant::now() + timeout;
@@ -26,7 +29,10 @@ pub fn request_collect(t: &mut dyn VialTransport, req: &Packet, stray: &mut Vec<
             stray.push(pkt);
         }
     }
-    Err(format!("no reply to command {:#04x} within {:?}", req[0], timeout))
+    Err(format!(
+        "no reply to command {:#04x} within {:?}",
+        req[0], timeout
+    ))
 }
 
 /// Read one Vial behaviour setting; the reply starts with a return code instead of echoing the command.
@@ -99,7 +105,9 @@ pub fn read_keymap(t: &mut dyn VialTransport, rows: u8, cols: u8) -> Result<Keym
         let reply = request(t, &req_native_action(layer, row, col))?;
         match parse_native_action(&reply) {
             Ok(action) => keymap.actions[i] = action,
-            Err(status) => log::warn!("native read of layer {layer} ({row},{col}) failed: {status:?}"),
+            Err(status) => {
+                log::warn!("native read of layer {layer} ({row},{col}) failed: {status:?}")
+            }
         }
     }
     Ok(keymap)
@@ -124,7 +132,12 @@ mod tests {
         t.script.push_back(reply(&[0xE9, 0x01, 1, 0, 2, 0]));
         t.script.push_back(reply(&[0x08, 0xE8, 0x01, 3, 85, 72]));
         let mut stray = Vec::new();
-        let got = request_collect(&mut t, &crate::vial::protocol::req_battery_halves(), &mut stray).unwrap();
+        let got = request_collect(
+            &mut t,
+            &crate::vial::protocol::req_battery_halves(),
+            &mut stray,
+        )
+        .unwrap();
         assert_eq!(got[1..3], [0xE8, 0x01]);
         assert_eq!(stray.len(), 1);
         assert_eq!(stray[0][0], 0xE9);
@@ -139,7 +152,9 @@ mod tests {
         buf[4..16].copy_from_slice(&[0x00, 0x14, 0x00, 0x01, 0x7C, 0x77, 0x00, 0x00, 0, 0, 0, 0]);
         t.script.push_back(buf);
         let mut hit = reply(&[0x08, 0xE8, 0x04, 0x01, 0, 3, 0]); // scan hit at flat 3
-        let n = postcard::to_slice(&KeyAction::Morse(2), &mut hit[8..]).unwrap().len();
+        let n = postcard::to_slice(&KeyAction::Morse(2), &mut hit[8..])
+            .unwrap()
+            .len();
         hit[7] = n as u8;
         t.script.push_back(hit);
         t.script.push_back(reply(&[0x08, 0xE8, 0x04, 0x01, 1])); // scan END
@@ -157,7 +172,10 @@ mod tests {
         let mut t = scripted();
         let km = read_keymap(&mut t, 1, 2).unwrap();
         assert_eq!((km.rows, km.cols, km.layers), (1, 2, 3));
-        assert_eq!(km.actions[0], KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::Q))));
+        assert_eq!(
+            km.actions[0],
+            KeyAction::Single(Action::Key(KeyCode::Hid(HidKeyCode::Q)))
+        );
         assert_eq!(km.actions[1], KeyAction::Transparent);
         assert_eq!(km.actions[2], KeyAction::Single(Action::TriLayerLower));
         assert_eq!(km.actions[3], KeyAction::Morse(2));
@@ -180,7 +198,10 @@ mod tests {
         t.script.push_back(buf);
         t.script.push_back(reply(&[0x08, 0xE8, 0x04, 0x01, 1])); // scan: END immediately
         let action = KeyAction::TapHold(
-            Action::KeyWithModifier(HidKeyCode::Kc9, crate::keymap::ModifierCombination::from_packed_bits(2)),
+            Action::KeyWithModifier(
+                HidKeyCode::Kc9,
+                crate::keymap::ModifierCombination::from_packed_bits(2),
+            ),
             Action::Modifier(crate::keymap::ModifierCombination::from_packed_bits(4)),
             Default::default(),
         );

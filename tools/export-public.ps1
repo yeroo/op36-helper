@@ -1,11 +1,13 @@
 # Copy the working tree into a fresh directory for the public repository: no git history, none of
 # the vendor or personal binaries, no scratch. The firmware submodule pointer travels as .gitmodules
-# plus an empty rmk/ directory; `git submodule update --init` fills it after the first clone.
+# plus the gitlink, which the caller stages after `git add -A` (a gitlink on an empty directory is
+# dropped by `git add -A`, so add it last):
+#   git update-index --add --cacheinfo 160000,<rmk commit>,rmk
 param([Parameter(Mandatory = $true)][string]$Dest)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definition)
 $exclude = @(
-  ".git", "_scratch", "_ref", ".superpowers", ".venv", "rmk",
+  ".git", "_scratch", "_ref", ".superpowers", ".venv", ".pytest_cache", "rmk",
   "helper\target", "installer\Output", "installer\stage",
   "firmware\op36-v0.2.0", "firmware\op36-v0.2.0-stock", "firmware\zmk-rollback",
   "firmware\backup-zmk-left", "firmware\backup-zmk-right", "firmware\settings-reset"

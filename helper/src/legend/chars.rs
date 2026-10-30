@@ -27,7 +27,9 @@ pub struct WinCharSource {
 
 impl WinCharSource {
     pub fn new() -> WinCharSource {
-        WinCharSource { en: find_en_layout() }
+        WinCharSource {
+            en: find_en_layout(),
+        }
     }
 }
 
@@ -39,7 +41,9 @@ impl Default for WinCharSource {
 
 impl CharSource for WinCharSource {
     fn char_for(&self, hkl: Hkl, scancode: ScanCode, shift: bool) -> Option<String> {
-        use windows::Win32::UI::Input::KeyboardAndMouse::{HKL, MAPVK_VSC_TO_VK_EX, MapVirtualKeyExW, ToUnicodeEx};
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            HKL, MAPVK_VSC_TO_VK_EX, MapVirtualKeyExW, ToUnicodeEx,
+        };
         let layout = HKL(hkl as *mut _);
         let vsc = if scancode.extended {
             0xE000 | scancode.code as u32
@@ -59,7 +63,14 @@ impl CharSource for WinCharSource {
             let mut buf = [0u16; 8];
             // Plain scan code here: bit 15 of this argument means "key up", so the E0 form must not
             // be passed (MapVirtualKeyExW above does want it).
-            let n = ToUnicodeEx(vk, scancode.code as u32, &state, &mut buf, to_unicode_flags(), Some(layout));
+            let n = ToUnicodeEx(
+                vk,
+                scancode.code as u32,
+                &state,
+                &mut buf,
+                to_unicode_flags(),
+                Some(layout),
+            );
             if n <= 0 {
                 return None; // 0 = no translation, <0 = dead key
             }
@@ -78,7 +89,9 @@ impl CharSource for WinCharSource {
 
 /// First installed layout whose primary language is English, else load the US layout.
 fn find_en_layout() -> Hkl {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardLayoutList, HKL, KLF_NOTELLSHELL, LoadKeyboardLayoutW};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetKeyboardLayoutList, HKL, KLF_NOTELLSHELL, LoadKeyboardLayoutW,
+    };
     use windows::core::w;
     let mut list = [HKL::default(); 16];
     // SAFETY: documented call with a sized buffer.
@@ -132,7 +145,9 @@ impl CharSource for FakeCharSource {
         if scancode.extended {
             return None;
         }
-        self.map.get(&(hkl, scancode.code, shift)).map(|s| s.to_string())
+        self.map
+            .get(&(hkl, scancode.code, shift))
+            .map(|s| s.to_string())
     }
 
     fn en_hkl(&self) -> Hkl {

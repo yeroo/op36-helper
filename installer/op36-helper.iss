@@ -54,3 +54,29 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait pos
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
 ; Settings, the keymap cache and the log stay in %APPDATA%\op36-helper on purpose.
+
+[Code]
+{ Setup closes a running helper through Restart Manager (CloseApplications); the uninstaller has
+  no such step, so ask the helper's message window to leave and give it a moment. }
+procedure CloseRunningHelper;
+var
+  H: HWND;
+  I: Integer;
+begin
+  H := FindWindowByClassName('Op36HelperMsg');
+  if H <> 0 then
+  begin
+    PostMessage(H, $0010, 0, 0); { WM_CLOSE }
+    for I := 1 to 50 do
+    begin
+      Sleep(100);
+      if FindWindowByClassName('Op36HelperMsg') = 0 then Break;
+    end;
+  end;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  CloseRunningHelper;
+  Result := True;
+end;

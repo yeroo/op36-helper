@@ -2,12 +2,13 @@
 
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::Shell::{
-    NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW, Shell_NotifyIconW,
+    NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+    Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, HICON, IMAGE_ICON, LR_LOADFROMFILE, LoadImageW,
-    MF_CHECKED, MF_SEPARATOR, MF_STRING, SetForegroundWindow, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RETURNCMD,
-    TrackPopupMenu, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP,
+    AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, HICON, IMAGE_ICON, LR_LOADFROMFILE,
+    LoadImageW, MF_CHECKED, MF_SEPARATOR, MF_STRING, SetForegroundWindow, TPM_BOTTOMALIGN,
+    TPM_LEFTALIGN, TPM_RETURNCMD, TrackPopupMenu, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP,
 };
 use windows::core::PCWSTR;
 
@@ -56,7 +57,9 @@ impl Tray {
         nid.uCallbackMessage = WM_APP_TRAY;
         set_tip(&mut nid, "OP36 helper");
         // SAFETY: nid is fully initialised above.
-        unsafe { let _ = Shell_NotifyIconW(NIM_ADD, &nid); }
+        unsafe {
+            let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+        }
         tray.connected = !connected; // force the first set_connected to apply
         tray.set_connected(connected);
         tray
@@ -68,7 +71,11 @@ impl Tray {
             hWnd: self.hwnd,
             uID: 1,
             uFlags: flags,
-            hIcon: if self.connected { self.icon_on } else { self.icon_off },
+            hIcon: if self.connected {
+                self.icon_on
+            } else {
+                self.icon_off
+            },
             ..Default::default()
         }
     }
@@ -80,7 +87,9 @@ impl Tray {
         self.connected = connected;
         let nid = self.data(NIF_ICON);
         // SAFETY: nid is fully initialised.
-        unsafe { let _ = Shell_NotifyIconW(NIM_MODIFY, &nid); }
+        unsafe {
+            let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
+        }
     }
 
     /// Add the icon again after Explorer restarted (`TaskbarCreated`).
@@ -89,29 +98,38 @@ impl Tray {
         nid.uCallbackMessage = WM_APP_TRAY;
         set_tip(&mut nid, if tip.is_empty() { "OP36 helper" } else { tip });
         // SAFETY: nid is fully initialised.
-        unsafe { let _ = Shell_NotifyIconW(NIM_ADD, &nid); }
+        unsafe {
+            let _ = Shell_NotifyIconW(NIM_ADD, &nid);
+        }
     }
 
     /// A balloon notification from the tray icon (used once per newer release).
     pub fn balloon(&mut self, title: &str, text: &str) {
         let mut nid = self.data(NIF_INFO);
-        for (dst, src) in nid.szInfoTitle.iter_mut().zip(title.encode_utf16().take(63)) {
+        for (dst, src) in nid
+            .szInfoTitle
+            .iter_mut()
+            .zip(title.encode_utf16().take(63))
+        {
             *dst = src;
         }
         for (dst, src) in nid.szInfo.iter_mut().zip(text.encode_utf16().take(255)) {
             *dst = src;
         }
         // SAFETY: nid is fully initialised.
-        unsafe { let _ = Shell_NotifyIconW(NIM_MODIFY, &nid); }
+        unsafe {
+            let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
+        }
     }
 
     pub fn set_tooltip(&mut self, text: &str) {
         let mut nid = self.data(NIF_TIP);
         set_tip(&mut nid, text);
         // SAFETY: nid is fully initialised.
-        unsafe { let _ = Shell_NotifyIconW(NIM_MODIFY, &nid); }
+        unsafe {
+            let _ = Shell_NotifyIconW(NIM_MODIFY, &nid);
+        }
     }
-
 }
 
 /// What a `WM_APP_TRAY` callback asks for. Left click toggles, double-click opens Options,
@@ -135,15 +153,33 @@ pub fn classify_click(lparam_low: u32) -> Option<TrayClick> {
 /// loop, so the caller must not hold any borrow the window procedure needs.
 pub fn show_menu(hwnd: HWND, overlay_visible: bool) -> Option<TrayCmd> {
     {
-        let toggle = to_wide(if overlay_visible { "Hide overlay" } else { "Show overlay" });
+        let toggle = to_wide(if overlay_visible {
+            "Hide overlay"
+        } else {
+            "Show overlay"
+        });
         let options = to_wide("Options…");
         let exit = to_wide("Exit");
         // SAFETY: plain menu API calls; the menu is destroyed before returning.
         unsafe {
             let menu = CreatePopupMenu().ok()?;
-            let check = if overlay_visible { MF_CHECKED } else { Default::default() };
-            let _ = AppendMenuW(menu, MF_STRING | check, MENU_TOGGLE as usize, PCWSTR(toggle.as_ptr()));
-            let _ = AppendMenuW(menu, MF_STRING, MENU_OPTIONS as usize, PCWSTR(options.as_ptr()));
+            let check = if overlay_visible {
+                MF_CHECKED
+            } else {
+                Default::default()
+            };
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING | check,
+                MENU_TOGGLE as usize,
+                PCWSTR(toggle.as_ptr()),
+            );
+            let _ = AppendMenuW(
+                menu,
+                MF_STRING,
+                MENU_OPTIONS as usize,
+                PCWSTR(options.as_ptr()),
+            );
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
             let _ = AppendMenuW(menu, MF_STRING, MENU_EXIT as usize, PCWSTR(exit.as_ptr()));
             let mut pt = POINT::default();
@@ -168,7 +204,9 @@ impl Drop for Tray {
     fn drop(&mut self) {
         let nid = self.data(Default::default());
         // SAFETY: removing our own icon.
-        unsafe { let _ = Shell_NotifyIconW(NIM_DELETE, &nid); }
+        unsafe {
+            let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
+        }
     }
 }
 
@@ -188,9 +226,16 @@ pub(crate) fn load_icon(name: &str, bytes: &[u8]) -> HICON {
     let wide = to_wide(&path.to_string_lossy());
     // SAFETY: loading an icon from a file we just wrote.
     unsafe {
-        LoadImageW(None, PCWSTR(wide.as_ptr()), IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
-            .map(|h| HICON(h.0))
-            .unwrap_or_default()
+        LoadImageW(
+            None,
+            PCWSTR(wide.as_ptr()),
+            IMAGE_ICON,
+            0,
+            0,
+            LR_LOADFROMFILE,
+        )
+        .map(|h| HICON(h.0))
+        .unwrap_or_default()
     }
 }
 
@@ -200,8 +245,14 @@ mod tests {
 
     #[test]
     fn clicks_classify() {
-        assert_eq!(classify_click(WM_LBUTTONUP), Some(TrayClick::Command(TrayCmd::Toggle)));
-        assert_eq!(classify_click(WM_LBUTTONDBLCLK), Some(TrayClick::Command(TrayCmd::Options)));
+        assert_eq!(
+            classify_click(WM_LBUTTONUP),
+            Some(TrayClick::Command(TrayCmd::Toggle))
+        );
+        assert_eq!(
+            classify_click(WM_LBUTTONDBLCLK),
+            Some(TrayClick::Command(TrayCmd::Options))
+        );
         assert_eq!(classify_click(WM_RBUTTONUP), Some(TrayClick::Menu));
         assert_eq!(classify_click(0x0200 /* WM_MOUSEMOVE */), None);
     }

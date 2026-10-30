@@ -35,7 +35,10 @@ mod tests {
 
     #[test]
     fn version_line_names_the_cargo_version() {
-        assert_eq!(version_line(), format!("op36-helper {}", env!("CARGO_PKG_VERSION")));
+        assert_eq!(
+            version_line(),
+            format!("op36-helper {}", env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
@@ -43,7 +46,11 @@ mod tests {
         assert_eq!(parse_semver("v0.2.1"), Some((0, 2, 1)));
         assert_eq!(parse_semver("0.2.1"), Some((0, 2, 1)));
         assert_eq!(parse_semver("0.2"), None);
-        assert_eq!(parse_semver("0.2.1-rc1"), None, "prereleases are not update targets");
+        assert_eq!(
+            parse_semver("0.2.1-rc1"),
+            None,
+            "prereleases are not update targets"
+        );
     }
 
     #[test]

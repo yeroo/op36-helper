@@ -5,11 +5,14 @@ use std::collections::HashMap;
 
 use windows::Win32::Foundation::{HANDLE, HWND, LPARAM};
 use windows::Win32::UI::Input::{
-    GetRawInputData, GetRawInputDeviceInfoW, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT,
-    RIDEV_INPUTSINK, RIDI_DEVICENAME, RIM_TYPEKEYBOARD, RegisterRawInputDevices,
+    GetRawInputData, GetRawInputDeviceInfoW, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
+    RID_INPUT, RIDEV_INPUTSINK, RIDI_DEVICENAME, RIM_TYPEKEYBOARD, RegisterRawInputDevices,
 };
 
-use crate::input::modifiers::{VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SHIFT};
+use crate::input::modifiers::{
+    VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
+    VK_SHIFT,
+};
 use crate::legend::hid_table::ScanCode;
 use crate::model::DeviceKind;
 
@@ -26,7 +29,13 @@ pub struct RawKey {
 }
 
 impl RawKey {
-    pub fn from_fields(make_code: u8, extended: bool, vk: u16, down: bool, device: DeviceKind) -> RawKey {
+    pub fn from_fields(
+        make_code: u8,
+        extended: bool,
+        vk: u16,
+        down: bool,
+        device: DeviceKind,
+    ) -> RawKey {
         let vk = match vk {
             VK_SHIFT if make_code == 0x36 => VK_RSHIFT,
             VK_SHIFT => VK_LSHIFT,
@@ -89,7 +98,11 @@ fn device_kind(handle: HANDLE) -> DeviceKind {
                     Some(buf.as_mut_ptr() as *mut _),
                     &mut len,
                 );
-                if n == u32::MAX { String::new() } else { String::from_utf16_lossy(&buf[..(n as usize).min(512)]) }
+                if n == u32::MAX {
+                    String::new()
+                } else {
+                    String::from_utf16_lossy(&buf[..(n as usize).min(512)])
+                }
             };
             device_kind_from_name(&name)
         })
@@ -134,11 +147,19 @@ mod tests {
     #[test]
     fn device_kind_from_name_detects_the_op36() {
         assert_eq!(
-            device_kind_from_name(r"\\?\HID#VID_E126&PID_0036&MI_00#8&19a504f3&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"),
+            device_kind_from_name(
+                r"\\?\HID#VID_E126&PID_0036&MI_00#8&19a504f3&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c91405dd}"
+            ),
             DeviceKind::Op36
         );
-        assert_eq!(device_kind_from_name(r"\\?\HID#VID_046D&PID_C548&MI_00#..."), DeviceKind::Other);
-        assert_eq!(device_kind_from_name(r"\\?\hid#vid_e126&pid_0036&col01#..."), DeviceKind::Op36);
+        assert_eq!(
+            device_kind_from_name(r"\\?\HID#VID_046D&PID_C548&MI_00#..."),
+            DeviceKind::Other
+        );
+        assert_eq!(
+            device_kind_from_name(r"\\?\hid#vid_e126&pid_0036&col01#..."),
+            DeviceKind::Op36
+        );
         assert_eq!(device_kind_from_name(""), DeviceKind::Other);
     }
 
@@ -153,9 +174,21 @@ mod tests {
 
     #[test]
     fn generic_modifier_vks_resolve_to_sides() {
-        assert_eq!(RawKey::from_fields(0x36, false, VK_SHIFT, true, DeviceKind::Other).vk, VK_RSHIFT);
-        assert_eq!(RawKey::from_fields(0x2A, false, VK_SHIFT, true, DeviceKind::Other).vk, VK_LSHIFT);
-        assert_eq!(RawKey::from_fields(0x1D, true, VK_CONTROL, true, DeviceKind::Other).vk, VK_RCONTROL);
-        assert_eq!(RawKey::from_fields(0x38, false, VK_MENU, true, DeviceKind::Other).vk, VK_LMENU);
+        assert_eq!(
+            RawKey::from_fields(0x36, false, VK_SHIFT, true, DeviceKind::Other).vk,
+            VK_RSHIFT
+        );
+        assert_eq!(
+            RawKey::from_fields(0x2A, false, VK_SHIFT, true, DeviceKind::Other).vk,
+            VK_LSHIFT
+        );
+        assert_eq!(
+            RawKey::from_fields(0x1D, true, VK_CONTROL, true, DeviceKind::Other).vk,
+            VK_RCONTROL
+        );
+        assert_eq!(
+            RawKey::from_fields(0x38, false, VK_MENU, true, DeviceKind::Other).vk,
+            VK_LMENU
+        );
     }
 }

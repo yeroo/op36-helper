@@ -67,7 +67,10 @@ pub fn control_word_to_hotkey(word: u32) -> Hotkey {
 
 /// The saved monitor when it is not connected right now: it gets an extra combo row so a round
 /// trip through the dialog does not silently forget it.
-pub fn absent_monitor<'a>(selected: &'a Option<String>, monitors: &[MonitorInfo]) -> Option<&'a str> {
+pub fn absent_monitor<'a>(
+    selected: &'a Option<String>,
+    monitors: &[MonitorInfo],
+) -> Option<&'a str> {
     selected
         .as_deref()
         .filter(|name| !monitors.iter().any(|m| m.name == *name))
@@ -75,7 +78,11 @@ pub fn absent_monitor<'a>(selected: &'a Option<String>, monitors: &[MonitorInfo]
 
 /// Combo row 0 is "Primary"; rows 1..=n are the monitors in order; row n+1 (when present) is the
 /// saved-but-absent monitor.
-pub fn combo_to_monitor(index: usize, monitors: &[MonitorInfo], selected: &Option<String>) -> Option<String> {
+pub fn combo_to_monitor(
+    index: usize,
+    monitors: &[MonitorInfo],
+    selected: &Option<String>,
+) -> Option<String> {
     if index == 0 {
         return None;
     }
@@ -135,19 +142,37 @@ mod tests {
 
     #[test]
     fn hotkey_control_word_round_trips() {
-        let hk = Hotkey { modifiers: MOD_CONTROL.0 | MOD_ALT.0, vk: 0x4B };
+        let hk = Hotkey {
+            modifiers: MOD_CONTROL.0 | MOD_ALT.0,
+            vk: 0x4B,
+        };
         let word = hotkey_to_control_word(&hk);
         assert_eq!(word & 0xFF, 0x4B);
         assert_eq!(control_word_to_hotkey(word), hk);
-        let all = Hotkey { modifiers: MOD_CONTROL.0 | MOD_ALT.0 | MOD_SHIFT.0 | MOD_WIN.0, vk: 0x4F };
+        let all = Hotkey {
+            modifiers: MOD_CONTROL.0 | MOD_ALT.0 | MOD_SHIFT.0 | MOD_WIN.0,
+            vk: 0x4F,
+        };
         assert_eq!(control_word_to_hotkey(hotkey_to_control_word(&all)), all);
     }
 
     #[test]
     fn monitor_combo_index_zero_is_primary() {
         let mons = vec![
-            MonitorInfo { name: "A".into(), work_area: (0, 0, 10, 10), monitor_rect: (0, 0, 10, 10), is_primary: true, dpi: 96 },
-            MonitorInfo { name: "B".into(), work_area: (0, 0, 10, 10), monitor_rect: (0, 0, 10, 10), is_primary: false, dpi: 96 },
+            MonitorInfo {
+                name: "A".into(),
+                work_area: (0, 0, 10, 10),
+                monitor_rect: (0, 0, 10, 10),
+                is_primary: true,
+                dpi: 96,
+            },
+            MonitorInfo {
+                name: "B".into(),
+                work_area: (0, 0, 10, 10),
+                monitor_rect: (0, 0, 10, 10),
+                is_primary: false,
+                dpi: 96,
+            },
         ];
         assert_eq!(combo_to_monitor(0, &mons, &None), None);
         assert_eq!(combo_to_monitor(2, &mons, &None), Some("B".to_string()));
@@ -170,7 +195,11 @@ mod tests {
         let row = monitor_to_combo(&saved, &mons);
         assert_eq!(row, 2, "extra row after the connected monitors");
         assert_eq!(combo_to_monitor(row, &mons, &saved), saved);
-        assert_eq!(combo_to_monitor(1, &mons, &saved), Some("A".to_string()), "user can still pick a live one");
+        assert_eq!(
+            combo_to_monitor(1, &mons, &saved),
+            Some("A".to_string()),
+            "user can still pick a live one"
+        );
     }
 
     #[test]

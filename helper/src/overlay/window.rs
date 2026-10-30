@@ -4,22 +4,40 @@ use std::ffi::c_void;
 
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION, CreateCompatibleDC,
-    CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
+    AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
+    CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, ReleaseDC,
+    SelectObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, HMENU, HWND_TOPMOST, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, ShowWindow, ULW_ALPHA, UpdateLayeredWindow, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, HMENU, HWND_TOPMOST, PostQuitMessage, RegisterClassW, SW_HIDE,
+    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos, ShowWindow, ULW_ALPHA,
+    UpdateLayeredWindow, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 use windows::core::PCWSTR;
 
 use super::BgraBitmap;
+use crate::win::msgwindow::{SystemRequest, system_request};
 use crate::win::{hinstance, to_wide};
 
 const CLASS_NAME: &str = "Op36HelperOverlay";
 
-unsafe extern "system" fn overlay_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn overlay_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    // The overlay is a top-level window too, so Restart Manager and logoff ask it as well.
+    match system_request(msg, wparam.0) {
+        Some(SystemRequest::AgreeToEnd) => return LRESULT(1),
+        Some(SystemRequest::Exit) => {
+            // SAFETY: ends the message loop; App's destructors release the app bar and the tray.
+            unsafe { PostQuitMessage(0) };
+            return LRESULT(0);
+        }
+        None => {}
+    }
     // SAFETY: forwarding to the default procedure.
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
@@ -44,7 +62,11 @@ impl OverlayWindow {
         // SAFETY: standard window creation with the spec's styles.
         let hwnd = unsafe {
             CreateWindowExW(
-                WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                WS_EX_LAYERED
+                    | WS_EX_TRANSPARENT
+                    | WS_EX_TOPMOST
+                    | WS_EX_TOOLWINDOW
+                    | WS_EX_NOACTIVATE,
                 PCWSTR(class.as_ptr()),
                 PCWSTR(class.as_ptr()),
                 WS_POPUP,
@@ -77,7 +99,15 @@ impl OverlayWindow {
         self.y = y;
         // SAFETY: own window handle.
         unsafe {
-            let _ = SetWindowPos(self.hwnd, Some(HWND_TOPMOST), x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+            let _ = SetWindowPos(
+                self.hwnd,
+                Some(HWND_TOPMOST),
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 
@@ -129,7 +159,10 @@ impl OverlayWindow {
                 SourceConstantAlpha: 255,
                 AlphaFormat: AC_SRC_ALPHA as u8,
             };
-            let dst = POINT { x: self.x, y: self.y };
+            let dst = POINT {
+                x: self.x,
+                y: self.y,
+            };
             let size = SIZE {
                 cx: frame.width,
                 cy: frame.height,

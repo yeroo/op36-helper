@@ -50,11 +50,19 @@ fn run(ui: UiWindow, side: Side, bundle: Bundle, cancel: Receiver<()>) {
             Err(TryRecvError::Empty) => {}
         }
         let drive = find_uf2_drive();
-        let step = machine.step(start.elapsed().as_millis() as u64, drive.clone(), copy_result.take());
+        let step = machine.step(
+            start.elapsed().as_millis() as u64,
+            drive.clone(),
+            copy_result.take(),
+        );
         if let FlashStep::Copying(target) = &step {
             if last.as_ref() != Some(&step) {
                 let src = bundle.dir.join(uf2_for(side));
-                copy_result = Some(std::fs::copy(&src, target).map(|_| ()).map_err(|e| e.to_string()));
+                copy_result = Some(
+                    std::fs::copy(&src, target)
+                        .map(|_| ())
+                        .map_err(|e| e.to_string()),
+                );
             }
         }
         if last.as_ref() != Some(&step) {
@@ -97,7 +105,12 @@ fn post(ui: UiWindow, step: FlashStep) {
     let boxed = Box::new(step);
     // SAFETY: the UI thread takes ownership back with `take_step`.
     unsafe {
-        let _ = PostMessageW(Some(HWND(ui.0 as *mut _)), WM_APP_FLASH, WPARAM(0), LPARAM(Box::into_raw(boxed) as isize));
+        let _ = PostMessageW(
+            Some(HWND(ui.0 as *mut _)),
+            WM_APP_FLASH,
+            WPARAM(0),
+            LPARAM(Box::into_raw(boxed) as isize),
+        );
     }
 }
 
