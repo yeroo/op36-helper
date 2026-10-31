@@ -66,6 +66,9 @@ pub struct Settings {
     pub reserve_space: bool,
     /// Look for a newer release on GitHub at start and every 12 h (the only automatic network use).
     pub update_check: bool,
+    /// With the keyboard switched off (no OP36 found), hide the overlay after a minute and bring it
+    /// back when the keyboard is on again.
+    pub hide_when_offline: bool,
 }
 
 impl Default for Settings {
@@ -90,6 +93,7 @@ impl Default for Settings {
             theme: Theme::Auto,
             reserve_space: false,
             update_check: true,
+            hide_when_offline: true,
         }
     }
 }
@@ -227,5 +231,22 @@ mod tests {
             Settings::load(&dir.path().join("nope.json")),
             Settings::default()
         );
+    }
+}
+
+#[cfg(test)]
+mod offline_hide_tests {
+    use super::*;
+
+    #[test]
+    fn hiding_the_overlay_while_the_keyboard_is_off_is_on_by_default_and_for_old_files() {
+        assert!(Settings::default().hide_when_offline);
+        let old: Settings = serde_json::from_str(r#"{"visible": true}"#).unwrap();
+        assert!(
+            old.hide_when_offline,
+            "a settings file from before the option keeps the behaviour"
+        );
+        let off: Settings = serde_json::from_str(r#"{"hide_when_offline": false}"#).unwrap();
+        assert!(!off.hide_when_offline);
     }
 }

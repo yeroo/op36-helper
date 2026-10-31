@@ -40,7 +40,8 @@ battery pictograms and the master glyph need the firmware below.
 
 Switch the keyboard off and both halves grey out with *off*; after a minute the overlay hides
 itself and gives the screen space back. Switch the keyboard on again and it comes back by itself.
-Showing or hiding the overlay yourself in the meantime takes priority over that.
+Showing it yourself while the keyboard is off starts the minute again. Options → *Hide the overlay
+while the keyboard is off* turns this off; the halves then stay on screen greyed out.
 
 ## Firmware
 

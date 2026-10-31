@@ -225,6 +225,11 @@ impl App {
         unsafe {
             let _ = KillTimer(Some(self.hwnd), TIMER_OFF_HIDE);
         }
+        if visible && !self.model.connected {
+            // Shown by hand with the keyboard off: it goes away again after the minute.
+            let action = self.keyboard_off_action();
+            self.apply_auto_hide(action);
+        }
         let show = visible && self.model.wants_visible();
         self.overlay.show(show);
         self.overlay_shown = show;
@@ -402,7 +407,7 @@ impl App {
         let was_connected = self.model.connected;
         self.model.apply_at(event, uptime_ms());
         let action = match (was_connected, self.model.connected) {
-            (true, false) => self.auto_hide.on_disconnected(),
+            (true, false) => self.keyboard_off_action(),
             (false, true) => self.auto_hide.on_connected(),
             _ => None,
         };
@@ -439,6 +444,19 @@ impl App {
         let mut errors = Vec::new();
         if old.hotkey != new.hotkey || old.move_hotkey_mods != new.move_hotkey_mods {
             errors.extend(register_hotkeys(self.hwnd, &new));
+        }
+        if old.hide_when_offline != new.hide_when_offline {
+            if new.hide_when_offline {
+                if !self.model.connected {
+                    let action = self.keyboard_off_action();
+                    self.apply_auto_hide(action);
+                }
+            } else {
+                // Switched off: whatever we hid comes back now, nothing pending.
+                let action = self.auto_hide.on_connected();
+                self.apply_auto_hide(action);
+                self.auto_hide.user_toggled();
+            }
         }
         if old.update_check != new.update_check {
             if let Some(tx) = &self.update {
@@ -516,6 +534,15 @@ impl App {
             // Straight to the model: going back through the gate would hold it again (the bug
             // that kept a switched-off keyboard "on" forever).
             self.apply_model_event(ModelEvent::Hid(model::HidEvent::Disconnected));
+        }
+    }
+
+    /// The keyboard is off (or was never found): start the hide countdown if the option is on.
+    fn keyboard_off_action(&mut self) -> Option<auto_hide::Action> {
+        if self.settings.hide_when_offline {
+            self.auto_hide.on_disconnected()
+        } else {
+            None
         }
     }
 
@@ -1458,7 +1485,7 @@ fn main() {
         a.tray = Some(Tray::new(hwnd, false));
         a.hid = Some(hid_thread::spawn(hwnd));
         // Started with the keyboard off: same minute, same hide; a connect within it cancels.
-        let action = a.auto_hide.on_disconnected();
+        let action = a.keyboard_off_action();
         a.apply_auto_hide(action);
         if let Ok(exe) = std::env::current_exe() {
             update::cleanup_leftovers(&exe);

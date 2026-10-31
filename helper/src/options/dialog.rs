@@ -67,6 +67,7 @@ const ID_FW_FLASH_LEFT: i32 = 204;
 const ID_FW_FLASH_RIGHT: i32 = 205;
 const ID_FW_CANCEL: i32 = 206;
 const ID_UPDATE_CHECK: i32 = 210;
+const ID_HIDE_OFFLINE: i32 = 213;
 const ID_UPDATE_LINE: i32 = 211;
 const ID_UPDATE_NOW: i32 = 212;
 const ID_OPACITY_LABEL: i32 = 192;
@@ -620,7 +621,7 @@ fn build(hwnd: HWND, st: &mut State) {
         350,
         8,
         300,
-        140,
+        164,
         f,
     );
     let auto = make(
@@ -688,6 +689,20 @@ fn build(hwnd: HWND, st: &mut State) {
         f,
     );
     set_check(upd, s.update_check);
+    let off = make(
+        hwnd,
+        "BUTTON",
+        "Hide the overlay while the keyboard is off",
+        BS_AUTOCHECKBOX as u32 | WS_TABSTOP.0,
+        ID_HIDE_OFFLINE,
+        &l,
+        360,
+        138,
+        280,
+        22,
+        f,
+    );
+    set_check(off, s.hide_when_offline);
 
     // ---- Keyboard group ----
     make(
@@ -698,12 +713,12 @@ fn build(hwnd: HWND, st: &mut State) {
         0,
         &l,
         350,
-        156,
+        180,
         300,
         152,
         f,
     );
-    static_(&st.status_text, 360, 178, 280, 90, ID_STATUS);
+    static_(&st.status_text, 360, 202, 280, 90, ID_STATUS);
     make(
         hwnd,
         "BUTTON",
@@ -712,7 +727,7 @@ fn build(hwnd: HWND, st: &mut State) {
         ID_RELOAD,
         &l,
         360,
-        272,
+        296,
         130,
         26,
         f,
@@ -976,6 +991,7 @@ fn settings_from_controls(hwnd: HWND, st: &State) -> Settings {
     };
     s.reserve_space = get_check(child(hwnd, ID_RESERVE));
     s.update_check = get_check(child(hwnd, ID_UPDATE_CHECK));
+    s.hide_when_offline = get_check(child(hwnd, ID_HIDE_OFFLINE));
     s.autostart = get_check(child(hwnd, ID_AUTOSTART));
     s.find_key = get_check(child(hwnd, ID_FIND));
     s.find_key_secs = get_pos(child(hwnd, ID_FIND_SECS)) as f32 / 10.0;

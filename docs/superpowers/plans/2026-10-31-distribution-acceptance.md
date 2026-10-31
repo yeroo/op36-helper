@@ -115,3 +115,17 @@ The keyboard had never been shown as offline since the grace was introduced. Fix
 a pure gate (Hold / Apply / Ignore) with tests, and the timer applies the disconnect to the model
 directly (`apply_model_event`). 172 helper tests. Device check with the keyboard off: the 0.2.5 build
 starts with "keyboard off: overlay hides in 60 s" and the hide and restore are recorded below.
+
+Device result 2026-10-31 (0.2.5 installed): keyboard off → "off" on both halves → hidden after 60 s
+(20:09:51, overlay window not visible) → keyboard on → overlay back; Boris confirmed the restore.
+
+## Option "Hide the overlay while the keyboard is off" (0.2.6), 2026-10-31
+
+Boris: the helper should hide whenever no OmegaPoint is present, with a checkbox in Options. Added
+`Settings::hide_when_offline` (default true; an old settings file without the field reads as true —
+tested), a checkbox under "Check for updates automatically" (Behaviour group grown by 24 px, Keyboard
+group moved down), and `App::keyboard_off_action` as the single gate: connection loss, start-up with
+the keyboard off, the user showing the overlay by hand while it is off, and switching the option on
+all start the one-minute countdown; switching the option off restores a hidden overlay at once.
+Options captured with the keyboard off: the new checkbox ticked, "Keyboard: not found", both halves
+"not connected". Shipped as public v0.2.6.
