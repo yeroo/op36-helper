@@ -1,6 +1,6 @@
 name: Release
 # Tag a commit (`git tag v0.2.0 && git push origin v0.2.0`) to build the firmware pair, the helper,
-# the per-user installer and the portable exe, attest them, and publish a GitHub Release.
+# the per-user installer, the portable exe and the Linux tarball, attest them, and publish a GitHub Release.
 on:
   push:
     tags: ['v*']
@@ -69,9 +69,38 @@ jobs:
           path: out/
           if-no-files-found: error
 
+  linux:
+    name: Linux tarball
+    needs: firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: helper
+      - name: cargo test
+        working-directory: helper
+        run: cargo test --locked
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: linux/firmware
+      - name: Build the tarball
+        run: linux/build-tarball.sh --firmware-dir linux/firmware
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: linux/Output/*.tar.gz
+          if-no-files-found: error
+
   release:
     name: Installer, portable exe, release
-    needs: firmware
+    needs: [firmware, linux]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,6 +132,10 @@ jobs:
         with:
           name: firmware
           path: installer/firmware
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: installer/linux
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
       - name: Build installer and portable exe
@@ -111,6 +144,7 @@ jobs:
           ./installer/build.ps1 -FirmwareDir installer/firmware
           ./installer/build-portable.ps1 -SkipCargo
           Copy-Item installer/firmware/* installer/Output/
+          Copy-Item installer/linux/*.tar.gz installer/Output/
           # LF line endings so `sha256sum -c SHA256SUMS.txt` works on Linux and macOS too.
           $sums = Get-ChildItem installer/Output -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
             ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name }
@@ -123,6 +157,7 @@ jobs:
           subject-path: |
             installer/Output/op36-helper-setup-*.exe
             installer/Output/op36-helper-portable-*.exe
+            installer/Output/op36-helper-linux-x86_64-*.tar.gz
             installer/Output/op36_left.uf2
             installer/Output/op36_right.uf2
             installer/Output/BUILD_COMMIT.txt
@@ -133,6 +168,7 @@ jobs:
           files: |
             installer/Output/op36-helper-setup-*.exe
             installer/Output/op36-helper-portable-*.exe
+            installer/Output/op36-helper-linux-x86_64-*.tar.gz
             installer/Output/op36_left.uf2
             installer/Output/op36_right.uf2
             installer/Output/BUILD_COMMIT.txt

@@ -1,0 +1,5 @@
+# OP36 Helper: let the logged-in user talk to the Ergohaven OmegaPoint36's Vial interface
+# (keymap, layer notifications, battery) over USB and Bluetooth. Install with
+#   sudo cp 70-op36.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="e126", ATTRS{idProduct}=="0036", TAG+="uaccess"
+SUBSYSTEM=="hidraw", KERNELS=="*:E126:0036.*", TAG+="uaccess"

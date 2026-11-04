@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definition)
 $exclude = @(
   ".git", "_scratch", "_ref", ".superpowers", ".venv", ".pytest_cache", "rmk",
-  "helper\target", "installer\Output", "installer\stage",
+  "helper\target", "installer\Output", "installer\stage", "linux\Output",
   "firmware\op36-v0.2.0", "firmware\op36-v0.2.0-stock", "firmware\zmk-rollback",
   "firmware\backup-zmk-left", "firmware\backup-zmk-right", "firmware\settings-reset"
 )

@@ -1,5 +1,5 @@
 name: CI
-# Keeps main releasable: the helper's tests on Windows, the firmware fork's host tests on Linux.
+# Keeps main releasable: the helper's tests on Windows and Linux, the firmware fork's host tests.
 on:
   push:
     branches: [main]
@@ -17,6 +17,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: helper
+      - name: cargo test
+        working-directory: helper
+        run: cargo test --locked
+      - name: cargo build --release
+        working-directory: helper
+        run: cargo build --release --locked
+
+  helper-linux:
+    name: Helper tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

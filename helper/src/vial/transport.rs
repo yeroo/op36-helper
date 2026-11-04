@@ -46,6 +46,7 @@ impl Transport {
 pub const BLE_VIAL_REPORT_ID: u8 = 5;
 
 /// Windows exposes Bluetooth LE HID collections with the HOGP service UUID in the device path.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub fn transport_from_path(path: &str) -> Transport {
     let p = path.to_ascii_lowercase();
     if p.contains("00001812-0000-1000-8000-00805f9b34fb")
@@ -104,6 +105,7 @@ pub struct HidTransport {
 /// A Bluetooth session should give way as soon as a USB collection of the keyboard exists: the
 /// keyboard types over USB whenever it is enumerated, and the glyph must say so (a dual-role swap
 /// brings the bonded Bluetooth link up before the USB enumeration finishes).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub fn should_upgrade<'a>(current: Transport, paths: impl Iterator<Item = &'a str>) -> bool {
     current == Transport::Ble
         && paths

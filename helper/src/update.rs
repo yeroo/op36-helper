@@ -10,6 +10,7 @@ pub const API_URL: &str = "https://api.github.com/repos/yeroo/op36-helper/releas
 /// Which kind of install is running; decides how an update applies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channel {
+    #[cfg_attr(not(windows), allow(dead_code))]
     /// Inno per-user install under `%LOCALAPPDATA%\Programs\OP36 Helper`: silent setup re-run.
     Installed,
     /// A bare exe anywhere else: rename-swap in place.
@@ -33,6 +34,7 @@ impl Channel {
     }
 
     /// The word the apply script expects.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub fn script_name(self) -> &'static str {
         match self {
             Channel::Installed => "installed",
@@ -76,6 +78,7 @@ pub fn detect_channel_linux(exe: &Path, dir_writable: bool) -> Channel {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn detect_channel(exe: &Path, local_app_data: &Path) -> Channel {
     let exe_lower = exe.to_string_lossy().to_ascii_lowercase();
     if exe_lower.contains("\\scoop\\apps\\")

@@ -4,11 +4,11 @@
 > [yeroo/op36-helper](https://github.com/yeroo/op36-helper), produced by `tools/export-public.ps1`
 > (fresh tree, no history, no vendor binaries). Tag `vX.Y.Z` there to publish a release.
 
-A Windows tray app for the Ergohaven OmegaPoint36 split keyboard, plus a dual-role build of its RMK
-firmware.
+A tray app for the Ergohaven OmegaPoint36 split keyboard, on Windows and Linux, plus a dual-role build
+of its RMK firmware.
 
 The helper draws a click-through overlay of your keyboard in the vendor's documentation style: the
-layer you are holding, legends in the current Windows language (English and Russian), Shift / Ctrl /
+layer you are holding, legends in the current keyboard language (English and Russian), Shift / Ctrl /
 Alt / Win variants, "find a key" when you press one on another keyboard, and the battery of each half.
 The firmware lets **either half be the master**: the half holding the USB cable talks to the computer,
 the other follows over the split link; with no cable the left half is the master over Bluetooth.
@@ -28,6 +28,10 @@ Download from the [latest release](https://github.com/yeroo/op36-helper/releases
 The binaries are not code-signed, so Windows SmartScreen warns on first run: *More info → Run
 anyway*. Every release carries a Sigstore build-provenance attestation; verify a download with
 `gh attestation verify <file> --repo yeroo/op36-helper`.
+
+**Linux:** download `op36-helper-linux-x86_64-<version>.tar.gz`, unpack it and run
+`./install.sh --udev`. Permissions, Wayland notes and the rest are in [linux/README.md](linux/README.md);
+the sections below describe the Windows build, and the Linux one behaves the same.
 
 ## First run
 
@@ -90,13 +94,14 @@ Uninstalling removes the program and its shortcuts and leaves your settings.
 
 ```
 git clone --recurse-submodules https://github.com/yeroo/op36-helper
-cd op36-helper/helper && cargo build --release        # the helper (Rust stable, Windows)
-pwsh ../installer/build.ps1                           # the installer (Inno Setup 6)
+cd op36-helper/helper && cargo build --release        # the helper (Rust stable; Linux also needs libxkbcommon-dev)
+pwsh ../installer/build.ps1                           # the Windows installer (Inno Setup 6)
+sh ../linux/build-tarball.sh                          # the Linux tarball
 bash ../firmware/tools/build-op36.sh                  # the firmware pair (ARM toolchain, see FLASHING.md)
 ```
 
 Developer notes: [helper/README.md](helper/README.md), [firmware/FLASHING.md](firmware/FLASHING.md),
-[installer/README.md](installer/README.md). The firmware source is the `rmk/` submodule
+[installer/README.md](installer/README.md), [linux/README.md](linux/README.md). The firmware source is the `rmk/` submodule
 (`yeroo/rmk`, branch `op36-layer-notify`), pinned to the commit the bundled files were built from.
 
 ## License

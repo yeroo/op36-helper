@@ -6,3 +6,4 @@ helper/target/
 __pycache__/
 installer/Output/
 installer/stage/
+linux/Output/

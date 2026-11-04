@@ -1,4 +1,6 @@
 //! Options dialog: pure helpers here, Win32 dialog in `dialog.rs`, Startup shortcut in `autostart.rs`.
+//! (Linux has its own window in `linux::options_ui`; the Win32 control helpers are unused there.)
+#![cfg_attr(not(windows), allow(dead_code))]
 
 #[cfg(windows)]
 pub mod autostart;
