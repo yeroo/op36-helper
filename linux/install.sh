@@ -48,7 +48,8 @@ else
     exit 1
 fi
 
-"$bin_dir/op36-helper" --quit 2>/dev/null && sleep 1 || true
+# Stop a running helper (any copy answers on the same socket); --quit waits for it to exit.
+"$src_bin" --quit 2>/dev/null || true
 mkdir -p "$bin_dir" "$app_data" "$data_dir/applications" "$data_dir/icons/hicolor/256x256/apps"
 cp "$src_bin" "$bin_dir/op36-helper.new"
 chmod 0755 "$bin_dir/op36-helper.new"
