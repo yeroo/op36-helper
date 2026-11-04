@@ -1,19 +1,16 @@
 //! Background thread that owns the Vial connection: reconnect loop, keymap read, layer
-//! subscription. Results reach the UI thread as `WM_APP_HID` messages carrying a boxed
-//! [`HidEvent`].
+//! subscription. Results reach the UI thread through a [`Sink`] (on Windows a `WM_APP_HID`
+//! message carrying a boxed [`HidEvent`]).
 
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
-
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::model::HidEvent;
 use crate::vial::layer_client::{LayerClient, LayerPacket};
 use crate::vial::protocol::{parse_battery_halves, req_battery_halves};
 use crate::vial::reader::{read_keymap, request_collect};
 use crate::vial::transport::{HidTransport, VialTransport};
-use crate::win::msgwindow::WM_APP_HID;
+use crate::sink::Sink;
 
 const MATRIX_ROWS: u8 = 6;
 const MATRIX_COLS: u8 = 6;
@@ -28,12 +25,6 @@ pub enum HidCmd {
     Quit,
 }
 
-/// Wrapper so the UI thread can pass raw `HWND` into the thread (handles are plain integers).
-#[derive(Clone, Copy)]
-struct UiWindow(isize);
-// SAFETY: an HWND is an opaque integer handle; PostMessageW is thread-safe.
-unsafe impl Send for UiWindow {}
-
 /// The model event for a layer-notify packet (state update or master handoff).
 pub fn route_layer_packet(packet: &LayerPacket) -> HidEvent {
     match packet {
@@ -43,28 +34,20 @@ pub fn route_layer_packet(packet: &LayerPacket) -> HidEvent {
     }
 }
 
-fn post(ui: UiWindow, event: HidEvent) {
-    let boxed = Box::new(event);
-    // SAFETY: the UI thread's handler takes ownership back with `Box::from_raw` (see `take_event`).
-    unsafe {
-        let _ = PostMessageW(
-            Some(HWND(ui.0 as *mut _)),
-            WM_APP_HID,
-            WPARAM(0),
-            LPARAM(Box::into_raw(boxed) as isize),
-        );
-    }
+type UiWindow = Sink<HidEvent>;
+
+fn post(ui: &UiWindow, event: HidEvent) {
+    ui(event);
 }
 
-/// Reclaim the event posted by [`post`]. Must be called exactly once per `WM_APP_HID`.
-pub fn take_event(lparam: LPARAM) -> Box<HidEvent> {
-    // SAFETY: `lparam` is a pointer produced by `Box::into_raw` in `post`.
-    unsafe { Box::from_raw(lparam.0 as *mut HidEvent) }
+/// Windows: reclaim the event posted for `WM_APP_HID`. Must be called exactly once per message.
+#[cfg(windows)]
+pub fn take_event(lparam: windows::Win32::Foundation::LPARAM) -> Box<HidEvent> {
+    crate::sink::take_boxed(lparam)
 }
 
-pub fn spawn(ui_hwnd: HWND) -> Sender<HidCmd> {
+pub fn spawn(ui: Sink<HidEvent>) -> Sender<HidCmd> {
     let (tx, rx) = std::sync::mpsc::channel();
-    let ui = UiWindow(ui_hwnd.0 as isize);
     std::thread::Builder::new()
         .name("hid".into())
         .spawn(move || run(ui, rx))
@@ -81,7 +64,7 @@ fn run(ui: UiWindow, rx: Receiver<HidCmd>) {
     let api = match hidapi::HidApi::new() {
         Ok(api) => api,
         Err(e) => {
-            post(ui, HidEvent::Error(format!("hidapi init failed: {e}")));
+            post(&ui, HidEvent::Error(format!("hidapi init failed: {e}")));
             return;
         }
     };
@@ -99,12 +82,12 @@ fn run(ui: UiWindow, rx: Receiver<HidCmd>) {
             }
             std::thread::sleep(RECONNECT_EVERY);
         };
-        post(ui, HidEvent::Connected(transport.transport));
+        post(&ui, HidEvent::Connected(transport.transport));
         log::info!("keyboard connected over {}", transport.transport.label());
-        if let Err(e) = session(ui, &rx, &mut transport, start, &mut api) {
+        if let Err(e) = session(&ui, &rx, &mut transport, start, &mut api) {
             log::warn!("hid session ended: {e}");
         }
-        post(ui, HidEvent::Disconnected);
+        post(&ui, HidEvent::Disconnected);
         log::info!("keyboard disconnected");
         std::thread::sleep(RECONNECT_EVERY);
     }
@@ -112,7 +95,7 @@ fn run(ui: UiWindow, rx: Receiver<HidCmd>) {
 
 /// One connected session; returns when the device errors or `Quit` arrives (as `Err`).
 fn session(
-    ui: UiWindow,
+    ui: &UiWindow,
     rx: &Receiver<HidCmd>,
     t: &mut HidTransport,
     start: Instant,
@@ -130,14 +113,14 @@ fn session(
             match request_collect(t, &req_battery_halves(), &mut stray) {
                 Ok(reply) => {
                     if let Some(b) = parse_battery_halves(&reply) {
-                        post(ui, HidEvent::Battery(b));
+                        post(&ui, HidEvent::Battery(b));
                     }
                 }
                 Err(e) => log::debug!("battery query: {e}"),
             }
             for pkt in &stray {
                 if let Some(packet) = client.on_packet(pkt) {
-                    post(ui, route_layer_packet(&packet));
+                    post(&ui, route_layer_packet(&packet));
                 }
             }
         }
@@ -157,9 +140,9 @@ fn session(
         if read_pending {
             read_pending = false;
             match read_keymap(t, MATRIX_ROWS, MATRIX_COLS) {
-                Ok(km) => post(ui, HidEvent::Keymap(km)),
+                Ok(km) => post(&ui, HidEvent::Keymap(km)),
                 Err(e) => {
-                    post(ui, HidEvent::Error(format!("keymap read failed: {e}")));
+                    post(&ui, HidEvent::Error(format!("keymap read failed: {e}")));
                     return Err(e);
                 }
             }
@@ -178,9 +161,9 @@ fn session(
                 let was_supported = client.supported;
                 if let Some(packet) = client.on_packet(&pkt) {
                     if was_supported != Some(true) {
-                        post(ui, HidEvent::LayerNotifySupported(true));
+                        post(&ui, HidEvent::LayerNotifySupported(true));
                     }
-                    post(ui, route_layer_packet(&packet));
+                    post(&ui, route_layer_packet(&packet));
                 }
             }
             None => {
@@ -189,7 +172,7 @@ fn session(
                 let budget = t.reply_timeout().as_millis() as u64;
                 client.on_timeout(now_ms(start).saturating_sub(budget.saturating_sub(500)));
                 if before.is_none() && client.supported == Some(false) {
-                    post(ui, HidEvent::LayerNotifySupported(false));
+                    post(&ui, HidEvent::LayerNotifySupported(false));
                 }
             }
         }

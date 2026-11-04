@@ -14,8 +14,12 @@ pub enum Channel {
     Installed,
     /// A bare exe anywhere else: rename-swap in place.
     Portable,
-    /// scoop / chocolatey layout: the package manager owns the files.
+    /// scoop / chocolatey layout (or a read-only system path on Linux): the package manager owns
+    /// the files.
     PackageManager,
+    /// Linux: the release tarball (binary + firmware) applied in place by the helper itself.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    LinuxTarball,
 }
 
 impl Channel {
@@ -24,6 +28,7 @@ impl Channel {
             Channel::Installed => "setup",
             Channel::Portable => "portable",
             Channel::PackageManager => "package",
+            Channel::LinuxTarball => "Linux",
         }
     }
 
@@ -33,6 +38,41 @@ impl Channel {
             Channel::Installed => "installed",
             _ => "portable",
         }
+    }
+}
+
+/// The channel of the running copy on this platform.
+pub fn current_channel(exe: &Path) -> Channel {
+    #[cfg(windows)]
+    {
+        detect_channel(exe, &dirs::data_local_dir().unwrap_or_default())
+    }
+    #[cfg(not(windows))]
+    {
+        let dir_writable = exe
+            .parent()
+            .map(|d| {
+                let probe = d.join(".op36-helper-write-probe");
+                let ok = std::fs::write(&probe, b"").is_ok();
+                let _ = std::fs::remove_file(&probe);
+                ok
+            })
+            .unwrap_or(false);
+        detect_channel_linux(exe, dir_writable)
+    }
+}
+
+/// Linux: a copy in a system location (or anywhere we cannot write) belongs to its package
+/// manager; anything else updates itself from the tarball.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn detect_channel_linux(exe: &Path, dir_writable: bool) -> Channel {
+    let system = ["/usr/", "/nix/", "/snap/", "/opt/", "/app/"]
+        .iter()
+        .any(|p| exe.starts_with(p));
+    if system || !dir_writable {
+        Channel::PackageManager
+    } else {
+        Channel::LinuxTarball
     }
 }
 
@@ -93,12 +133,22 @@ pub fn parse_release(json: &str) -> Option<Release> {
     Some(Release { version, assets })
 }
 
+/// Linux release tarball: `op36-helper-linux-x86_64-<version>.tar.gz` holding `op36-helper`, the
+/// firmware files, the udev rule, the desktop entry and `install.sh`.
+pub const LINUX_ASSET_PREFIX: &str = "op36-helper-linux-x86_64-";
+
 /// The asset a channel updates from, if the release carries one.
 pub fn pick_asset(release: &Release, channel: Channel) -> Option<&Asset> {
     let prefix = match channel {
         Channel::Installed => "op36-helper-setup-",
         Channel::Portable => "op36-helper-portable-",
         Channel::PackageManager => return None,
+        Channel::LinuxTarball => {
+            return release
+                .assets
+                .iter()
+                .find(|a| a.name.starts_with(LINUX_ASSET_PREFIX) && a.name.ends_with(".tar.gz"));
+        }
     };
     release
         .assets
@@ -141,6 +191,7 @@ pub fn verify_sha256(path: &Path, expected_hex: &str) -> bool {
 }
 
 /// The PowerShell helper that applies the update after this process exits.
+#[cfg(any(windows, test))]
 pub fn apply_script() -> &'static str {
     include_str!("../assets/apply-update.ps1")
 }
@@ -151,6 +202,71 @@ pub fn updates_dir() -> PathBuf {
         .unwrap_or_default()
         .join("op36-helper")
         .join("updates")
+}
+
+/// Linux: where the firmware bundle lives when the binary sits in `~/.local/bin` (the tarball's
+/// `install.sh` and the updater put it here).
+#[cfg(target_os = "linux")]
+pub fn linux_firmware_home() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_default()
+        .join("op36-helper")
+}
+
+/// Linux: unpack a verified release tarball, refresh the firmware bundle and swap the binary in
+/// place (rename over the running file is atomic; this process keeps its old inode). Returns the
+/// path to start afterwards.
+#[cfg(target_os = "linux")]
+pub fn apply_linux_tarball(tarball: &Path, exe: &Path) -> Result<PathBuf, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tarball.parent().ok_or("bad payload path")?.join("unpacked");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let status = std::process::Command::new("tar")
+        .arg("-xzf")
+        .arg(tarball)
+        .arg("-C")
+        .arg(&dir)
+        .arg("--no-same-owner")
+        .status()
+        .map_err(|e| format!("cannot run tar: {e}"))?;
+    if !status.success() {
+        return Err(format!("tar failed ({status})"));
+    }
+    // The tarball has one top-level folder; accept a flat one too.
+    let root = std::fs::read_dir(&dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| p.join("op36-helper").is_file())
+        .unwrap_or_else(|| dir.clone());
+    let new_bin = root.join("op36-helper");
+    if !new_bin.is_file() {
+        return Err("the tarball holds no op36-helper binary".into());
+    }
+    // Firmware next to the exe wins when present (portable layout), else the data dir.
+    let exe_dir = exe.parent().ok_or("bad exe path")?;
+    let fw_target = if exe_dir.join(crate::firmware::BUNDLE_DIR).is_dir() {
+        exe_dir.join(crate::firmware::BUNDLE_DIR)
+    } else {
+        linux_firmware_home().join(crate::firmware::BUNDLE_DIR)
+    };
+    let fw_src = root.join(crate::firmware::BUNDLE_DIR);
+    if fw_src.is_dir() {
+        std::fs::create_dir_all(&fw_target).map_err(|e| e.to_string())?;
+        for entry in std::fs::read_dir(&fw_src).map_err(|e| e.to_string())?.flatten() {
+            if entry.path().is_file() {
+                std::fs::copy(entry.path(), fw_target.join(entry.file_name()))
+                    .map_err(|e| format!("firmware copy: {e}"))?;
+            }
+        }
+    }
+    let staged = exe.with_extension("new");
+    std::fs::copy(&new_bin, &staged).map_err(|e| format!("cannot stage the new binary: {e}"))?;
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(&staged, exe).map_err(|e| format!("cannot replace the binary: {e}"))?;
+    Ok(exe.to_path_buf())
 }
 
 /// Start-up housekeeping: the `.old` exe a portable swap leaves and old payloads. Best effort.
@@ -209,6 +325,7 @@ mod tests {
         );
     }
 
+    #[cfg(windows)] // Windows path semantics (`C:\...` prefixes)
     #[test]
     fn channel_detection_from_exe_path() {
         let lad = Path::new(r"C:\Users\b\AppData\Local");
@@ -249,6 +366,35 @@ mod tests {
         );
         assert!(!verify_sha256(f.path(), "00"));
         assert!(!verify_sha256(Path::new(r"Z:\missing\file.exe"), "00"));
+    }
+
+    #[test]
+    fn linux_channel_detection() {
+        assert_eq!(
+            detect_channel_linux(Path::new("/home/b/.local/bin/op36-helper"), true),
+            Channel::LinuxTarball
+        );
+        assert_eq!(
+            detect_channel_linux(Path::new("/usr/bin/op36-helper"), true),
+            Channel::PackageManager
+        );
+        assert_eq!(
+            detect_channel_linux(Path::new("/home/b/ro/op36-helper"), false),
+            Channel::PackageManager
+        );
+    }
+
+    #[test]
+    fn linux_asset_is_the_tarball() {
+        let r = parse_release(r#"{"tag_name":"v0.3.0","assets":[{"name":"op36-helper-portable-0.3.0.exe","browser_download_url":"https://x/p.exe"},{"name":"op36-helper-linux-x86_64-0.3.0.tar.gz","browser_download_url":"https://x/l.tgz","digest":"sha256:ab12000000000000000000000000000000000000000000000000000000000000"}]}"#).unwrap();
+        assert_eq!(
+            pick_asset(&r, Channel::LinuxTarball).map(|a| a.url.as_str()),
+            Some("https://x/l.tgz")
+        );
+        assert_eq!(
+            available_update(&r, Channel::LinuxTarball, "0.2.6").as_deref(),
+            Some("0.3.0")
+        );
     }
 
     #[test]

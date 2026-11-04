@@ -80,6 +80,22 @@ pub fn unframe_read(report_id: u8, buf: &[u8; 33], n: usize) -> Option<Packet> {
     Some(pkt)
 }
 
+/// How a HID collection reaches the PC: the device path on Windows (`/dev/hidrawN` says nothing on
+/// Linux, where the bus type does).
+pub fn transport_of(info: &hidapi::DeviceInfo) -> Transport {
+    #[cfg(target_os = "linux")]
+    {
+        match info.bus_type() {
+            hidapi::BusType::Bluetooth => Transport::Ble,
+            _ => Transport::Usb,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        transport_from_path(&info.path().to_string_lossy())
+    }
+}
+
 pub struct HidTransport {
     device: hidapi::HidDevice,
     pub transport: Transport,
@@ -108,6 +124,21 @@ impl HidTransport {
             })
             .map(|d| d.path().to_string_lossy().into_owned())
             .collect::<Vec<_>>();
+        #[cfg(target_os = "linux")]
+        {
+            let _ = paths;
+            return self.transport == Transport::Ble
+                && api
+                    .device_list()
+                    .filter(|d| {
+                        d.vendor_id() == VID
+                            && d.product_id() == PID
+                            && d.usage_page() == USAGE_PAGE
+                            && d.usage() == USAGE
+                    })
+                    .any(|d| transport_of(d) == Transport::Usb);
+        }
+        #[cfg(not(target_os = "linux"))]
         should_upgrade(self.transport, paths.iter().map(String::as_str))
     }
 
@@ -122,10 +153,9 @@ impl HidTransport {
                     && d.usage() == USAGE
             })
             .collect();
-        candidates
-            .sort_by_key(|d| transport_from_path(&d.path().to_string_lossy()) == Transport::Ble);
+        candidates.sort_by_key(|d| transport_of(d) == Transport::Ble);
         for info in candidates {
-            let transport = transport_from_path(&info.path().to_string_lossy());
+            let transport = transport_of(info);
             match api.open_path(info.path()) {
                 Ok(device) => {
                     log::info!("Vial interface opened over {}", transport.label());

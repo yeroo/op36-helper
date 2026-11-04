@@ -1,9 +1,11 @@
-//! Light / dark palette selection following the Windows app theme.
+//! Light / dark palette selection following the system app theme (Windows registry, or the
+//! desktop's colour-scheme preference on Linux).
 
 use crate::settings::Theme;
 
 /// `AppsUseLightTheme` from `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`
 /// (read only; nothing is ever written). `None` when the value is missing.
+#[cfg(windows)]
 pub fn windows_apps_use_light() -> Option<bool> {
     use windows::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
     use windows::core::w;
@@ -33,8 +35,15 @@ pub fn is_dark(theme: Theme, apps_use_light: Option<bool>) -> bool {
     }
 }
 
+#[cfg(windows)]
 pub fn dark_mode(theme: Theme) -> bool {
     is_dark(theme, windows_apps_use_light())
+}
+
+/// Linux: the desktop's light flag, kept current by [`crate::linux::desktop`]'s watcher.
+#[cfg(target_os = "linux")]
+pub fn dark_mode(theme: Theme) -> bool {
+    is_dark(theme, crate::linux::desktop::apps_use_light())
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! Track Shift / Ctrl / Alt / Win from raw key events (left and right folded together).
 
-use crate::input::raw_input::RawKey;
+use crate::input::rawkey::RawKey;
 use crate::model::Modifiers;
 
 pub const VK_SHIFT: u16 = 0x10;
@@ -65,8 +65,17 @@ impl ModTracker {
         }
     }
 
+    /// Replace the state with what the devices report (Linux reads it from evdev).
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub fn set(&mut self, left: Modifiers, right: Modifiers) -> Modifiers {
+        self.left = left;
+        self.right = right;
+        self.current()
+    }
+
     /// Re-read the real key state (after focus changes, so a modifier released while another window
     /// had focus never sticks).
+    #[cfg(windows)]
     pub fn resync(&mut self) -> Modifiers {
         use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
         // SAFETY: GetAsyncKeyState has no preconditions.

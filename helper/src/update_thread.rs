@@ -1,20 +1,17 @@
 //! The updater's worker: one release check 30 s after start and every 12 h while the setting is
 //! on, plus "check now" and "update now" on request. Results reach the UI thread as boxed
-//! `UpdateEvent`s (`WM_APP_UPDATE`). This is the only module that talks to the network.
+//! `UpdateEvent`s through a [`Sink`]. This is the only module that talks to the network.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
-
 use crate::update::{
-    API_URL, Channel, Release, available_update, detect_channel, parse_release, pick_asset,
+    API_URL, Channel, Release, available_update, current_channel, parse_release, pick_asset,
     refuse_reason, updates_dir, verify_sha256,
 };
+use crate::sink::Sink;
 use crate::version::{VERSION, is_newer};
-use crate::win::msgwindow::WM_APP_UPDATE;
 
 /// Test seam: a local file path here is read as the API response, and asset URLs that are local
 /// paths are copied instead of downloaded (hermetic end-to-end runs, like agwinterm's).
@@ -38,7 +35,8 @@ pub enum UpdateEvent {
     /// The check could not be made (offline, rate limit, odd document); quiet by design.
     CheckFailed,
     Downloading(String),
-    /// Payload verified; the UI thread starts `helper` and exits.
+    /// Payload verified; the UI thread starts `helper` and exits (Linux: the binary is already
+    /// swapped, `payload` is the path to start, `helper` is empty).
     Verified {
         payload: PathBuf,
         helper: PathBuf,
@@ -47,14 +45,10 @@ pub enum UpdateEvent {
     Failed(String),
 }
 
-#[derive(Clone, Copy)]
-struct UiWindow(isize);
-// SAFETY: an HWND is an opaque integer handle; PostMessageW is thread-safe.
-unsafe impl Send for UiWindow {}
+type UiWindow = Sink<UpdateEvent>;
 
-pub fn spawn(ui_hwnd: HWND, auto_check: bool) -> Sender<UpdateCmd> {
+pub fn spawn(ui: Sink<UpdateEvent>, auto_check: bool) -> Sender<UpdateCmd> {
     let (tx, rx) = std::sync::mpsc::channel();
-    let ui = UiWindow(ui_hwnd.0 as isize);
     std::thread::Builder::new()
         .name("op36-update".into())
         .spawn(move || run(ui, rx, auto_check))
@@ -73,15 +67,15 @@ fn run(ui: UiWindow, rx: Receiver<UpdateCmd>, mut auto_check: bool) {
         match rx.recv_timeout(wait) {
             Err(RecvTimeoutError::Disconnected) => return,
             Ok(UpdateCmd::AutoCheck(on)) => auto_check = on,
-            Ok(UpdateCmd::UpdateNow) => update(ui),
+            Ok(UpdateCmd::UpdateNow) => update(&ui),
             Ok(cmd) => {
                 if wants_check(&cmd, auto_check) {
-                    post(ui, check());
+                    post(&ui, check());
                 }
             }
             Err(RecvTimeoutError::Timeout) => {
                 if auto_check && Instant::now() >= next_check {
-                    post(ui, check());
+                    post(&ui, check());
                     next_check = Instant::now() + CHECK_EVERY;
                 }
             }
@@ -109,7 +103,7 @@ pub fn wants_check(cmd: &UpdateCmd, auto_check: bool) -> bool {
 
 fn check() -> UpdateEvent {
     let channel = std::env::current_exe()
-        .map(|exe| detect_channel(&exe, &dirs::data_local_dir().unwrap_or_default()))
+        .map(|exe| current_channel(&exe))
         .unwrap_or(Channel::Portable);
     match fetch_latest() {
         Some(r) => match available_update(&r, channel, VERSION) {
@@ -120,21 +114,20 @@ fn check() -> UpdateEvent {
     }
 }
 
-fn update(ui: UiWindow) {
+fn update(ui: &UiWindow) {
     let exe = match std::env::current_exe() {
         Ok(p) => p,
         Err(e) => {
             return post(
-                ui,
+                &ui,
                 UpdateEvent::Failed(format!("cannot resolve the running exe: {e}")),
             );
         }
     };
-    let local_app_data = dirs::data_local_dir().unwrap_or_default();
-    let channel = detect_channel(&exe, &local_app_data);
+    let channel = current_channel(&exe);
     if channel == Channel::PackageManager {
         return post(
-            ui,
+            &ui,
             UpdateEvent::Failed(
                 "this copy is managed by a package manager; update it there".into(),
             ),
@@ -142,18 +135,18 @@ fn update(ui: UiWindow) {
     }
     let Some(release) = fetch_latest() else {
         return post(
-            ui,
+            &ui,
             UpdateEvent::Failed(
                 "update check failed (offline or rate-limited); try again later".into(),
             ),
         );
     };
     if !is_newer(&release.version, VERSION) {
-        return post(ui, UpdateEvent::UpToDate);
+        return post(&ui, UpdateEvent::UpToDate);
     }
     let Some(asset) = pick_asset(&release, channel) else {
         return post(
-            ui,
+            &ui,
             UpdateEvent::Failed(format!(
                 "release {} has no {} asset",
                 release.version,
@@ -163,41 +156,58 @@ fn update(ui: UiWindow) {
     };
     if let Some(reason) = refuse_reason(asset) {
         return post(
-            ui,
+            &ui,
             UpdateEvent::Failed(format!("refusing an unverifiable update: {reason}")),
         );
     }
-    post(ui, UpdateEvent::Downloading(release.version.clone()));
+    post(&ui, UpdateEvent::Downloading(release.version.clone()));
     let dir = updates_dir();
     let payload = dir.join(&asset.name);
     if let Err(e) = download(&asset.url, &payload) {
         let _ = std::fs::remove_file(&payload);
-        return post(ui, UpdateEvent::Failed(format!("download failed: {e}")));
+        return post(&ui, UpdateEvent::Failed(format!("download failed: {e}")));
     }
     if !verify_sha256(&payload, asset.sha256.as_deref().unwrap_or("")) {
         let _ = std::fs::remove_file(&payload);
         return post(
-            ui,
+            &ui,
             UpdateEvent::Failed(
                 "download failed SHA-256 verification; nothing was installed".into(),
             ),
         );
     }
-    let helper = dir.join("apply-update.ps1");
-    if let Err(e) = std::fs::write(&helper, crate::update::apply_script()) {
-        return post(
-            ui,
-            UpdateEvent::Failed(format!("cannot write the update helper: {e}")),
+    #[cfg(target_os = "linux")]
+    {
+        match crate::update::apply_linux_tarball(&payload, &exe) {
+            Ok(start) => post(
+                &ui,
+                UpdateEvent::Verified {
+                    payload: start,
+                    helper: PathBuf::new(),
+                    channel,
+                },
+            ),
+            Err(e) => post(&ui, UpdateEvent::Failed(format!("install failed: {e}"))),
+        }
+    }
+    #[cfg(windows)]
+    {
+        let helper = dir.join("apply-update.ps1");
+        if let Err(e) = std::fs::write(&helper, crate::update::apply_script()) {
+            return post(
+                &ui,
+                UpdateEvent::Failed(format!("cannot write the update helper: {e}")),
+            );
+        }
+        post(
+            &ui,
+            UpdateEvent::Verified {
+                payload,
+                helper,
+                channel,
+            },
         );
     }
-    post(
-        ui,
-        UpdateEvent::Verified {
-            payload,
-            helper,
-            channel,
-        },
-    );
 }
 
 /// The latest release document, from the API or the `OP36_UPDATE_API` test seam.
@@ -249,23 +259,14 @@ fn download(url: &str, dest: &PathBuf) -> Result<(), String> {
     }
 }
 
-fn post(ui: UiWindow, event: UpdateEvent) {
-    let boxed = Box::new(event);
-    // SAFETY: the UI thread takes ownership back with `take_event`.
-    unsafe {
-        let _ = PostMessageW(
-            Some(HWND(ui.0 as *mut _)),
-            WM_APP_UPDATE,
-            WPARAM(0),
-            LPARAM(Box::into_raw(boxed) as isize),
-        );
-    }
+fn post(ui: &UiWindow, event: UpdateEvent) {
+    ui(event);
 }
 
-/// UI thread: reclaim an event posted by `post`.
-pub fn take_event(lparam: LPARAM) -> Box<UpdateEvent> {
-    // SAFETY: `lparam` is a pointer produced by `Box::into_raw` in `post`.
-    unsafe { Box::from_raw(lparam.0 as *mut UpdateEvent) }
+/// Windows: reclaim an event posted for `WM_APP_UPDATE`.
+#[cfg(windows)]
+pub fn take_event(lparam: windows::Win32::Foundation::LPARAM) -> Box<UpdateEvent> {
+    crate::sink::take_boxed(lparam)
 }
 
 #[cfg(test)]
