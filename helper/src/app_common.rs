@@ -29,8 +29,13 @@ pub fn init_logging() {
         .append(true)
         .open(paths::log_file());
     let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = Vec::new();
+    // `OP36_LOG=debug` (or trace / warn …) for a more or less detailed file log.
+    let level = std::env::var("OP36_LOG")
+        .ok()
+        .and_then(|v| v.parse::<LevelFilter>().ok())
+        .unwrap_or(LevelFilter::Info);
     if let Ok(file) = file {
-        loggers.push(WriteLogger::new(LevelFilter::Info, Config::default(), file));
+        loggers.push(WriteLogger::new(level, Config::default(), file));
     }
     #[cfg(debug_assertions)]
     loggers.push(simplelog::TermLogger::new(
