@@ -927,7 +927,7 @@ impl Renderer {
                 crate::vial::protocol::Side::Left,
                 crate::vial::protocol::Side::Right,
             ] {
-                self.draw_offline_half(side, "off");
+                self.draw_offline_half(side, if frame.access_denied { "no access" } else { "off" });
             }
         } else if let Some(side) = frame.offline_half {
             self.draw_offline_half(side, "offline");

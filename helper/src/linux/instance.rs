@@ -86,6 +86,18 @@ pub fn serve(on_cmd: impl Fn(String) + Send + 'static) {
         .expect("spawn control thread");
 }
 
+/// After `quit`: wait until no instance answers on the socket any more.
+pub fn wait_gone(wait: Duration) -> bool {
+    let deadline = std::time::Instant::now() + wait;
+    while UnixStream::connect(paths::control_socket()).is_ok() {
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    true
+}
+
 /// Remove the socket file at exit so the next start does not have to probe it.
 pub fn release() {
     let _ = std::fs::remove_file(paths::control_socket());

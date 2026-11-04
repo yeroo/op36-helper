@@ -97,6 +97,31 @@ pub fn transport_of(info: &hidapi::DeviceInfo) -> Transport {
     }
 }
 
+pub enum OpenOutcome {
+    Opened(HidTransport),
+    NotFound,
+    /// Present, but the OS refused to open this path.
+    Denied(String),
+}
+
+/// An open failure that means "no permission" rather than "busy" or "gone".
+fn is_permission_error(path: &str, message: &str) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = message;
+        matches!(
+            std::fs::OpenOptions::new().read(true).write(true).open(path),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied
+        )
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = path;
+        let m = message.to_ascii_lowercase();
+        m.contains("access is denied") || m.contains("permission denied")
+    }
+}
+
 pub struct HidTransport {
     device: hidapi::HidDevice,
     pub transport: Transport,
@@ -145,7 +170,16 @@ impl HidTransport {
     }
 
     /// Open the OP36's raw-HID (Vial) collection, preferring USB over Bluetooth when both are present.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
     pub fn open(api: &hidapi::HidApi) -> Option<HidTransport> {
+        match Self::open_outcome(api) {
+            OpenOutcome::Opened(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Like [`HidTransport::open`], telling "not there" apart from "there but refused".
+    pub fn open_outcome(api: &hidapi::HidApi) -> OpenOutcome {
         let mut candidates: Vec<_> = api
             .device_list()
             .filter(|d| {
@@ -156,17 +190,27 @@ impl HidTransport {
             })
             .collect();
         candidates.sort_by_key(|d| transport_of(d) == Transport::Ble);
+        let mut denied = None;
         for info in candidates {
             let transport = transport_of(info);
             match api.open_path(info.path()) {
                 Ok(device) => {
                     log::info!("Vial interface opened over {}", transport.label());
-                    return Some(HidTransport { device, transport });
+                    return OpenOutcome::Opened(HidTransport { device, transport });
                 }
-                Err(e) => log::warn!("hid open ({}): {e}", transport.label()),
+                Err(e) => {
+                    let path = info.path().to_string_lossy().into_owned();
+                    if is_permission_error(&path, &e.to_string()) {
+                        denied = Some(path);
+                    }
+                    log::debug!("hid open ({}): {e}", transport.label());
+                }
             }
         }
-        None
+        match denied {
+            Some(path) => OpenOutcome::Denied(path),
+            None => OpenOutcome::NotFound,
+        }
     }
 }
 
