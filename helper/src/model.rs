@@ -24,7 +24,8 @@ pub struct Modifiers {
     pub win: bool,
 }
 
-/// Windows keyboard layout handle (`HKL` as an integer).
+/// Keyboard layout id: a Windows `HKL` as an integer; on Linux a synthetic id whose low word is
+/// the same LANGID (see `linux::xkb`).
 pub type Hkl = isize;
 
 /// Which keyboard a key press came from.
@@ -243,7 +244,7 @@ impl Model {
     pub fn status_line_at(&self, now_ms: u64) -> String {
         let mut s = format!(
             "OP36 · {} · {}",
-            crate::input::language::primary_lang_tag(self.hkl),
+            crate::input::primary_lang_tag(self.hkl),
             self.keymap.layer_name(self.layer.active)
         );
         if self.is_switching(now_ms) {

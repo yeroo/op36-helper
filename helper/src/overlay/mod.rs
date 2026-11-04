@@ -1,13 +1,19 @@
 //! The click-through overlay: window plumbing and the pixel surface handed to it.
 
+#[cfg(windows)]
 pub mod appbar;
 pub mod frame;
 pub mod geometry;
 pub mod placement;
+#[cfg(windows)]
 pub mod render_d2d;
+#[cfg(target_os = "linux")]
+pub mod render_skia;
+#[cfg(windows)]
 pub mod window;
 
-/// Premultiplied BGRA pixels, row-major, top-down, as `UpdateLayeredWindow` wants them.
+/// Premultiplied BGRA pixels (`0xAARRGGBB` words), row-major, top-down, as `UpdateLayeredWindow`
+/// and an X11 32-bit ARGB visual want them.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct BgraBitmap {
     pub width: i32,

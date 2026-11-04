@@ -9,53 +9,12 @@ use windows::Win32::UI::Input::{
     RID_INPUT, RIDEV_INPUTSINK, RIDI_DEVICENAME, RIM_TYPEKEYBOARD, RegisterRawInputDevices,
 };
 
-use crate::input::modifiers::{
-    VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
-    VK_SHIFT,
-};
-use crate::legend::hid_table::ScanCode;
 use crate::model::DeviceKind;
 
 const RI_KEY_BREAK: u16 = 0x01;
 const RI_KEY_E0: u16 = 0x02;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RawKey {
-    pub scancode: ScanCode,
-    /// Virtual key, with generic Shift/Ctrl/Alt resolved to the left/right variant.
-    pub vk: u16,
-    pub down: bool,
-    pub device: DeviceKind,
-}
-
-impl RawKey {
-    pub fn from_fields(
-        make_code: u8,
-        extended: bool,
-        vk: u16,
-        down: bool,
-        device: DeviceKind,
-    ) -> RawKey {
-        let vk = match vk {
-            VK_SHIFT if make_code == 0x36 => VK_RSHIFT,
-            VK_SHIFT => VK_LSHIFT,
-            VK_CONTROL if extended => VK_RCONTROL,
-            VK_CONTROL => VK_LCONTROL,
-            VK_MENU if extended => VK_RMENU,
-            VK_MENU => VK_LMENU,
-            other => other,
-        };
-        RawKey {
-            scancode: ScanCode {
-                code: make_code,
-                extended,
-            },
-            vk,
-            down,
-            device,
-        }
-    }
-}
+pub use super::rawkey::RawKey;
 
 /// `Op36` when the Raw Input device name carries the keyboard's VID/PID.
 pub fn device_kind_from_name(name: &str) -> DeviceKind {
@@ -143,6 +102,9 @@ pub fn parse(lparam: LPARAM) -> Option<RawKey> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::modifiers::{
+        VK_CONTROL, VK_LMENU, VK_LSHIFT, VK_MENU, VK_RCONTROL, VK_RSHIFT, VK_SHIFT,
+    };
 
     #[test]
     fn device_kind_from_name_detects_the_op36() {

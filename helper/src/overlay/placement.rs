@@ -2,9 +2,10 @@
 
 use crate::settings::{Anchor, Settings};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MonitorInfo {
-    /// Device name such as `\\.\DISPLAY1` (stable across sessions for the same output).
+    /// Device name such as `\\.\DISPLAY1` or the RandR output name `eDP-1` (stable across
+    /// sessions for the same output).
     pub name: String,
     /// `(left, top, right, bottom)` of the work area (desktop minus taskbar), in screen pixels.
     pub work_area: (i32, i32, i32, i32),
@@ -15,6 +16,7 @@ pub struct MonitorInfo {
 }
 
 /// Enumerate attached monitors with their work areas and DPI.
+#[cfg(windows)]
 pub fn monitors() -> Vec<MonitorInfo> {
     use windows::Win32::Foundation::{LPARAM, RECT};
     use windows::Win32::Graphics::Gdi::{

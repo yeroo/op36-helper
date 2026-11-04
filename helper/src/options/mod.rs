@@ -1,9 +1,11 @@
 //! Options dialog: pure helpers here, Win32 dialog in `dialog.rs`, Startup shortcut in `autostart.rs`.
 
+#[cfg(windows)]
 pub mod autostart;
+#[cfg(windows)]
 pub mod dialog;
 
-use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
+use crate::settings::modbits::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
 
 use crate::overlay::placement::MonitorInfo;
 use crate::settings::Hotkey;
@@ -29,16 +31,16 @@ const HOTKEYF_WIN_PRIVATE: u32 = 0x80;
 /// `HKM_GETHOTKEY` word: low byte = virtual key, high byte = HOTKEYF flags.
 pub fn hotkey_to_control_word(hk: &Hotkey) -> u32 {
     let mut flags = 0;
-    if hk.modifiers & MOD_SHIFT.0 != 0 {
+    if hk.modifiers & MOD_SHIFT != 0 {
         flags |= HOTKEYF_SHIFT;
     }
-    if hk.modifiers & MOD_CONTROL.0 != 0 {
+    if hk.modifiers & MOD_CONTROL != 0 {
         flags |= HOTKEYF_CONTROL;
     }
-    if hk.modifiers & MOD_ALT.0 != 0 {
+    if hk.modifiers & MOD_ALT != 0 {
         flags |= HOTKEYF_ALT;
     }
-    if hk.modifiers & MOD_WIN.0 != 0 {
+    if hk.modifiers & MOD_WIN != 0 {
         flags |= HOTKEYF_WIN_PRIVATE;
     }
     (flags << 8) | (hk.vk & 0xFF)
@@ -48,16 +50,16 @@ pub fn control_word_to_hotkey(word: u32) -> Hotkey {
     let flags = (word >> 8) & 0xFF;
     let mut modifiers = 0;
     if flags & HOTKEYF_SHIFT != 0 {
-        modifiers |= MOD_SHIFT.0;
+        modifiers |= MOD_SHIFT;
     }
     if flags & HOTKEYF_CONTROL != 0 {
-        modifiers |= MOD_CONTROL.0;
+        modifiers |= MOD_CONTROL;
     }
     if flags & HOTKEYF_ALT != 0 {
-        modifiers |= MOD_ALT.0;
+        modifiers |= MOD_ALT;
     }
     if flags & HOTKEYF_WIN_PRIVATE != 0 {
-        modifiers |= MOD_WIN.0;
+        modifiers |= MOD_WIN;
     }
     Hotkey {
         modifiers,
@@ -106,16 +108,16 @@ pub fn monitor_to_combo(selected: &Option<String>, monitors: &[MonitorInfo]) -> 
 /// Human-readable hotkey, e.g. `Ctrl+Alt+K`.
 pub fn hotkey_label(hk: &Hotkey) -> String {
     let mut parts = Vec::new();
-    if hk.modifiers & MOD_CONTROL.0 != 0 {
+    if hk.modifiers & MOD_CONTROL != 0 {
         parts.push("Ctrl".to_string());
     }
-    if hk.modifiers & MOD_ALT.0 != 0 {
+    if hk.modifiers & MOD_ALT != 0 {
         parts.push("Alt".to_string());
     }
-    if hk.modifiers & MOD_SHIFT.0 != 0 {
+    if hk.modifiers & MOD_SHIFT != 0 {
         parts.push("Shift".to_string());
     }
-    if hk.modifiers & MOD_WIN.0 != 0 {
+    if hk.modifiers & MOD_WIN != 0 {
         parts.push("Win".to_string());
     }
     parts.push(match hk.vk {
@@ -131,7 +133,7 @@ mod tests {
     use super::*;
     use crate::overlay::placement::MonitorInfo;
     use crate::settings::Hotkey;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
+    use crate::settings::modbits::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
 
     #[test]
     fn scale_slider_maps_percent_both_ways() {
@@ -143,14 +145,14 @@ mod tests {
     #[test]
     fn hotkey_control_word_round_trips() {
         let hk = Hotkey {
-            modifiers: MOD_CONTROL.0 | MOD_ALT.0,
+            modifiers: MOD_CONTROL | MOD_ALT,
             vk: 0x4B,
         };
         let word = hotkey_to_control_word(&hk);
         assert_eq!(word & 0xFF, 0x4B);
         assert_eq!(control_word_to_hotkey(word), hk);
         let all = Hotkey {
-            modifiers: MOD_CONTROL.0 | MOD_ALT.0 | MOD_SHIFT.0 | MOD_WIN.0,
+            modifiers: MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN,
             vk: 0x4F,
         };
         assert_eq!(control_word_to_hotkey(hotkey_to_control_word(&all)), all);
@@ -202,6 +204,7 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn startup_shortcut_path_is_in_user_startup_folder() {
         assert!(crate::paths::startup_shortcut().ends_with(r"Programs\Startup\OP36 Helper.lnk"));

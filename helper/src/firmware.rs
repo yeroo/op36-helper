@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(m.step(500, None, None), FlashStep::WaitingForDrive);
         assert_eq!(
             m.step(1_000, Some(PathBuf::from(r"E:\")), None),
-            FlashStep::Copying(PathBuf::from(r"E:\op36_left.uf2"))
+            FlashStep::Copying(PathBuf::from(r"E:\").join("op36_left.uf2"))
         );
         assert_eq!(
             m.step(1_500, Some(PathBuf::from(r"E:\")), Some(Ok(()))),

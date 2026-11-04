@@ -1,9 +1,17 @@
-//! Persistent user settings (`%APPDATA%\op36-helper\settings.json`).
+//! Persistent user settings (`%APPDATA%\op36-helper\settings.json`, `~/.config/op36-helper/settings.json` on Linux).
 
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL};
+
+/// `RegisterHotKey` modifier bits (`MOD_*` in winuser.h); stored in settings on every platform.
+pub mod modbits {
+    pub const MOD_ALT: u32 = 0x0001;
+    pub const MOD_CONTROL: u32 = 0x0002;
+    pub const MOD_SHIFT: u32 = 0x0004;
+    pub const MOD_WIN: u32 = 0x0008;
+}
+use modbits::{MOD_ALT, MOD_CONTROL};
 
 /// Where the overlay sits inside the chosen monitor's work area.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -81,7 +89,7 @@ impl Default for Settings {
             scale: 0.6,
             opacity: 0.65,
             hotkey: Hotkey {
-                modifiers: MOD_CONTROL.0 | MOD_ALT.0,
+                modifiers: MOD_CONTROL | MOD_ALT,
                 vk: 0x4B, // 'K'
             },
             autostart: false,
@@ -89,7 +97,7 @@ impl Default for Settings {
             find_key: true,
             find_key_secs: 2.0,
             show_en_hint: false,
-            move_hotkey_mods: MOD_CONTROL.0 | MOD_ALT.0,
+            move_hotkey_mods: MOD_CONTROL | MOD_ALT,
             theme: Theme::Auto,
             reserve_space: false,
             update_check: true,
@@ -149,7 +157,7 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL};
+    use super::modbits::{MOD_ALT, MOD_CONTROL};
 
     #[test]
     fn defaults_match_spec() {
@@ -160,7 +168,7 @@ mod tests {
         assert_eq!(
             s.hotkey,
             Hotkey {
-                modifiers: MOD_CONTROL.0 | MOD_ALT.0,
+                modifiers: MOD_CONTROL | MOD_ALT,
                 vk: 0x4B
             }
         );
@@ -200,7 +208,7 @@ mod tests {
     fn move_hotkey_default_is_ctrl_alt() {
         assert_eq!(
             Settings::default().move_hotkey_mods,
-            MOD_CONTROL.0 | MOD_ALT.0
+            MOD_CONTROL | MOD_ALT
         );
     }
 

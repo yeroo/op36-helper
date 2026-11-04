@@ -1,4 +1,5 @@
-//! Characters a key produces under a Windows keyboard layout.
+//! Characters a key produces under a keyboard layout (Windows `ToUnicodeEx`; Linux uses xkbcommon
+//! in `linux::xkb`).
 
 use super::hid_table::ScanCode;
 use crate::model::Hkl;
@@ -15,16 +16,19 @@ pub trait CharSource {
     fn en_hkl(&self) -> Hkl;
 }
 
+#[cfg(any(windows, test))]
 /// `ToUnicodeEx` flag bit 2: do not change the keyboard state (keeps the user's pending dead key).
 pub fn to_unicode_flags() -> u32 {
     1 << 2
 }
 
 /// Real implementation on top of `MapVirtualKeyExW` + `ToUnicodeExW`.
+#[cfg(windows)]
 pub struct WinCharSource {
     en: Hkl,
 }
 
+#[cfg(windows)]
 impl WinCharSource {
     pub fn new() -> WinCharSource {
         WinCharSource {
@@ -33,12 +37,14 @@ impl WinCharSource {
     }
 }
 
+#[cfg(windows)]
 impl Default for WinCharSource {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(windows)]
 impl CharSource for WinCharSource {
     fn char_for(&self, hkl: Hkl, scancode: ScanCode, shift: bool) -> Option<String> {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -88,6 +94,7 @@ impl CharSource for WinCharSource {
 }
 
 /// First installed layout whose primary language is English, else load the US layout.
+#[cfg(windows)]
 fn find_en_layout() -> Hkl {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         GetKeyboardLayoutList, HKL, KLF_NOTELLSHELL, LoadKeyboardLayoutW,
