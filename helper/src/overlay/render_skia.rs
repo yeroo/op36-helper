@@ -243,6 +243,28 @@ struct PlacedGlyph {
 // ---------------------------------------------------------------------------------------------
 // Renderer
 
+/// A part of the picture that depends only on size and theme, rendered once and reused.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Static {
+    /// Both case silhouettes (wide round-joined strokes: the most expensive thing drawn).
+    Cases,
+    /// The grey wash over one half (`true` = right).
+    Wash(bool),
+}
+
+/// Everything a finished bitmap depends on.
+#[derive(Clone, PartialEq)]
+struct FrameKey {
+    frame: Frame,
+    scale: u32,
+    opacity: u32,
+    dark: bool,
+    phase: bool,
+}
+
+/// Rendered frames kept for reuse: layer flips alternate between a handful of pictures.
+const RECENT_FRAMES: usize = 8;
+
 pub struct Renderer {
     /// Draw the dark palette (set by the caller from the theme).
     pub dark: bool,
@@ -251,6 +273,9 @@ pub struct Renderer {
     fonts: Fonts,
     pixmap: Pixmap,
     transform: Transform,
+    statics: HashMap<(Static, u32, bool), Pixmap>,
+    scale_bits: u32,
+    recent: std::collections::VecDeque<(FrameKey, BgraBitmap)>,
 }
 
 impl Renderer {
@@ -261,6 +286,9 @@ impl Renderer {
             fonts: Fonts::load(),
             pixmap: Pixmap::new(1, 1).expect("1x1 pixmap"),
             transform: Transform::identity(),
+            statics: HashMap::new(),
+            scale_bits: 0,
+            recent: std::collections::VecDeque::new(),
         }
     }
 
@@ -750,13 +778,7 @@ impl Renderer {
             crate::vial::protocol::Side::Left => Hand::Left,
             crate::vial::protocol::Side::Right => Hand::Right,
         };
-        let hull = case_outline(hand);
-        let wash = if self.dark {
-            Rgba(0.12, 0.12, 0.12, 0.62)
-        } else {
-            Rgba(0.82, 0.82, 0.82, 0.70)
-        };
-        self.polygon(&hull, wash, CASE_MARGIN);
+        self.draw_static(Static::Wash(hand == Hand::Right));
         let (bx, by, bw, bh) = battery_rect(hand);
         let text_color = if self.dark { TEXT_LIGHT } else { TEXT_DARK };
         self.text(
@@ -904,18 +926,85 @@ impl Renderer {
         }
     }
 
+    /// Composite a cached static layer at the current size and theme, rendering it on first use.
+    fn draw_static(&mut self, part: Static) {
+        let key = (part, self.scale_bits, self.dark);
+        if !self.statics.contains_key(&key) {
+            let (w, h) = (self.pixmap.width(), self.pixmap.height());
+            let Some(layer) = Pixmap::new(w, h) else { return };
+            let saved = std::mem::replace(&mut self.pixmap, layer);
+            match part {
+                Static::Cases => {
+                    let case = if self.dark { CASE_DARK } else { CASE };
+                    for hand in [Hand::Left, Hand::Right] {
+                        self.polygon(&case_outline(hand), case, CASE_MARGIN);
+                    }
+                }
+                Static::Wash(right) => {
+                    let hand = if right { Hand::Right } else { Hand::Left };
+                    let wash = if self.dark {
+                        Rgba(0.12, 0.12, 0.12, 0.62)
+                    } else {
+                        Rgba(0.82, 0.82, 0.82, 0.70)
+                    };
+                    self.polygon(&case_outline(hand), wash, CASE_MARGIN);
+                }
+            }
+            let layer = std::mem::replace(&mut self.pixmap, saved);
+            self.statics.insert(key, layer);
+        }
+        if part == Static::Cases {
+            return; // the caller copies it as the frame's base
+        }
+        if let Some(layer) = self.statics.get(&key) {
+            self.pixmap.draw_pixmap(
+                0,
+                0,
+                layer.as_ref(),
+                &tiny_skia::PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+    }
+
     /// Render `frame` at `scale` (user scale × display scale) into a premultiplied BGRA bitmap.
     pub fn render(&mut self, frame: &Frame, scale: f32, opacity: f32) -> BgraBitmap {
+        let key = FrameKey {
+            frame: frame.clone(),
+            scale: scale.to_bits(),
+            opacity: opacity.to_bits(),
+            dark: self.dark,
+            phase: self.switch_phase && frame.switching,
+        };
+        if let Some(pos) = self.recent.iter().position(|(k, _)| *k == key) {
+            let hit = self.recent.remove(pos).expect("position is valid");
+            let bitmap = hit.1.clone();
+            self.recent.push_front(hit);
+            return bitmap;
+        }
+        let bitmap = self.render_uncached(frame, scale, opacity);
+        self.recent.push_front((key, bitmap.clone()));
+        self.recent.truncate(RECENT_FRAMES);
+        bitmap
+    }
+
+    fn render_uncached(&mut self, frame: &Frame, scale: f32, opacity: f32) -> BgraBitmap {
         let (wf, hf) = panel_size(scale, frame.recipes.len());
         let (w, h) = (wf.ceil().max(1.0) as u32, hf.ceil().max(1.0) as u32);
         self.pixmap = Pixmap::new(w, h).expect("pixmap");
+        if self.scale_bits != scale.to_bits() {
+            self.scale_bits = scale.to_bits();
+            self.statics.clear();
+        }
         let base = Transform::from_scale(scale, scale);
         let board = base.pre_translate(PAD, STATUS_H);
         self.transform = board;
-        let case = if self.dark { CASE_DARK } else { CASE };
-        for hand in [Hand::Left, Hand::Right] {
-            let hull = case_outline(hand);
-            self.polygon(&hull, case, CASE_MARGIN);
+        // The cases are the bottom layer: start from a copy of them (a memcpy, where compositing
+        // the cached layer costs milliseconds).
+        self.draw_static(Static::Cases);
+        if let Some(cases) = self.statics.get(&(Static::Cases, self.scale_bits, self.dark)) {
+            self.pixmap = cases.clone();
         }
         for draw in &frame.keys {
             self.draw_key(frame, draw, board);
@@ -953,16 +1042,20 @@ impl Renderer {
         if !frame.recipes.is_empty() {
             self.draw_recipes(frame, board);
         }
-        // Premultiplied RGBA bytes → premultiplied 0xAARRGGBB words, scaled by the overlay opacity.
-        let k = opacity.clamp(0.0, 1.0);
+        // Premultiplied RGBA bytes → premultiplied 0xAARRGGBB words, scaled by the overlay opacity
+        // (integer maths: this runs over every pixel of every frame).
+        let k = (opacity.clamp(0.0, 1.0) * 256.0).round() as u32;
         let mut out = BgraBitmap::new(w as i32, h as i32);
-        for (dst, px) in out
-            .premultiplied
-            .iter_mut()
-            .zip(self.pixmap.data().chunks_exact(4))
-        {
-            let s = |v: u8| ((v as f32 * k).round() as u32).min(255);
-            *dst = (s(px[3]) << 24) | (s(px[0]) << 16) | (s(px[1]) << 8) | s(px[2]);
+        let src = self.pixmap.data().chunks_exact(4);
+        if k >= 256 {
+            for (dst, px) in out.premultiplied.iter_mut().zip(src) {
+                *dst = u32::from_le_bytes([px[2], px[1], px[0], px[3]]);
+            }
+        } else {
+            let s = |v: u8| ((v as u32 * k) >> 8) as u8;
+            for (dst, px) in out.premultiplied.iter_mut().zip(src) {
+                *dst = u32::from_le_bytes([s(px[2]), s(px[1]), s(px[0]), s(px[3])]);
+            }
         }
         out
     }

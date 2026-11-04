@@ -226,13 +226,12 @@ impl App {
         if !force && self.last_frame.as_ref() == Some(&frame) && self.last_scale == scale {
             return;
         }
+        let t0 = Instant::now();
         let bitmap = self.renderer.render(&frame, scale, self.settings.opacity);
+        let t_render = t0.elapsed();
+        // Work-area changes (our own strip included) arrive as `DisplayChanged`, which re-reads the
+        // monitors; a layer flip must not pay for X round trips.
         self.update_reservation((bitmap.width, bitmap.height));
-        // The work area may already exclude our own strip; the WM updates it asynchronously, so
-        // read it again after reserving.
-        if self.reserved.is_some() {
-            self.monitors = self.overlay.monitors();
-        }
         let reserved = self.reserved.clone();
         let (x, y, _) = place_with_reserved(
             &self.settings,
@@ -244,6 +243,11 @@ impl App {
         if let Err(e) = self.overlay.present(&bitmap) {
             log::warn!("present failed: {e}");
         }
+        log::debug!(
+            "redraw: render {:.1} ms, total {:.1} ms",
+            t_render.as_secs_f64() * 1000.0,
+            t0.elapsed().as_secs_f64() * 1000.0
+        );
         self.last_frame = Some(frame);
         self.last_scale = scale;
     }
@@ -923,6 +927,49 @@ pub fn main() {
                 eprintln!("op36-helper did not exit within 10 s");
                 std::process::exit(1);
             }
+            return;
+        }
+        Some("--bench-render") => {
+            // Per-frame render cost at the default size, without a display: a cold frame (cache
+            // miss: a new layer) and a repeat (a layer seen before).
+            let mut model =
+                Model::new(Settings::default(), std::fs::read(paths::keymap_cache_file()).ok());
+            model.apply(ModelEvent::Hid(model::HidEvent::Connected(
+                vial::transport::Transport::Usb,
+            )));
+            let chars = xkb::XkbCharSource::new();
+            let mut r = Renderer::new();
+            let n = 30u32;
+            let mut cold = Duration::ZERO;
+            let mut warm = Duration::ZERO;
+            for i in 0..n {
+                // A new battery level each time defeats the frame cache: a fresh render of a layer.
+                model.apply(ModelEvent::Hid(model::HidEvent::Layer(model::LayerState {
+                    active: (i % 3) as u8,
+                    mask: if i % 3 == 0 { 0 } else { 1 << (i % 3) },
+                    ..Default::default()
+                })));
+                model.apply(ModelEvent::Hid(model::HidEvent::Battery(
+                    vial::protocol::BatteryHalves {
+                        left: Some(i as u8),
+                        right: Some(90),
+                        left_charging: false,
+                        right_charging: false,
+                    },
+                )));
+                let frame = model.frame(&chars);
+                let t = Instant::now();
+                let _ = r.render(&frame, 0.6, 1.0);
+                cold += t.elapsed();
+                let t = Instant::now();
+                let _ = r.render(&frame, 0.6, 1.0);
+                warm += t.elapsed();
+            }
+            println!(
+                "cold render {:.2} ms/frame (first one includes the static layers), repeat {:.3} ms",
+                cold.as_secs_f64() * 1000.0 / n as f64,
+                warm.as_secs_f64() * 1000.0 / n as f64
+            );
             return;
         }
         Some("--help" | "-h") => {

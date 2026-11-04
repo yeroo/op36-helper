@@ -322,11 +322,16 @@ impl Overlay {
             self.set_size_hints();
         }
         // 0xAARRGGBB words are B, G, R, A bytes on a little-endian host: the ARGB32 visual's order.
-        let bytes: Vec<u8> = bitmap
+        #[cfg(target_endian = "little")]
+        // SAFETY: viewing a `[u32]` as its bytes is always valid (u8 has no alignment needs and
+        // every bit pattern is a valid u8); `align_to` returns the whole slice as the middle part.
+        let bytes: &[u8] = unsafe { bitmap.premultiplied.align_to::<u8>().1 };
+        #[cfg(target_endian = "big")]
+        let bytes: &[u8] = &bitmap
             .premultiplied
             .iter()
             .flat_map(|px| px.to_le_bytes())
-            .collect();
+            .collect::<Vec<u8>>();
         let row = w as usize * 4;
         // Stay under the request size limit: send bands of rows.
         let max = self.conn.maximum_request_bytes().saturating_sub(64).max(row);
