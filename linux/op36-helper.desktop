@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=OP36 Helper
+GenericName=Keyboard layout overlay
+Comment=On-screen layout of the Ergohaven OmegaPoint36 keyboard
+Exec=op36-helper
+Icon=op36-helper
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=keyboard;layout;overlay;ergohaven;omegapoint;
+StartupNotify=false
+Actions=Options;Toggle;
+
+[Desktop Action Options]
+Name=Options
+Exec=op36-helper --options
+
+[Desktop Action Toggle]
+Name=Show or hide the overlay
+Exec=op36-helper --toggle

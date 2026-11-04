@@ -1,0 +1,7 @@
+# OP36 Helper, optional: let the logged-in user read key events from every keyboard, which the
+# overlay needs for Shift / Ctrl / Alt / Super variants, "find a key" and its global hotkeys
+# (Wayland gives key events only to the focused window).
+#
+# Privacy: with this rule any program you run can read what you type, exactly as with membership
+# in the `input` group (the alternative: `sudo usermod -aG input $USER`, then log out and in).
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"

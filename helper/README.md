@@ -2,7 +2,7 @@
 
 User documentation: the [repository README](../README.md). This file covers building and the CLI.
 
-Windows tray application that draws a click-through overlay of an Ergohaven OmegaPoint36 keymap in
+Tray application (Windows and Linux) that draws a click-through overlay of an Ergohaven OmegaPoint36 keymap in
 the vendor's documentation style: live layer from the keyboard, legends in the current Windows
 language, Shift / Ctrl / Alt / Win variants, and "find a key" for any key pressed on any keyboard.
 
@@ -16,6 +16,30 @@ cargo test
 
 Dependencies: the `rmk-types` crate from the firmware clone at `../rmk` (path dependency), so the
 `omega36/rmk` clone must exist (see `firmware/FLASHING.md`).
+
+## Platforms
+
+The model, keymap, legends, Vial protocol, geometry, firmware and update logic are shared. Each
+platform supplies the window, renderer, tray, key input and language source:
+
+| | Windows (`win_app.rs`) | Linux (`linux/`) |
+|---|---|---|
+| Overlay | layered window, `UpdateLayeredWindow` | X11/XWayland ARGB dock window, empty input shape (`x11.rs`) |
+| Renderer | Direct2D + DirectWrite (`render_d2d.rs`) | tiny-skia + ab_glyph outlines (`render_skia.rs`) |
+| Tray | `Shell_NotifyIcon` | StatusNotifierItem via ksni (`tray.rs`) |
+| Keys | Raw Input | evdev (`keys.rs`); needs `/dev/input` access |
+| Language, legends | foreground `HKL`, `ToUnicodeEx` | GNOME input sources, xkbcommon (`desktop.rs`, `xkb.rs`) |
+| Options | Win32 dialog | egui window in a child process (`options_ui.rs`) |
+| Reserve space | app bar | `_NET_WM_STRUT_PARTIAL` |
+| Single instance, `--toggle` | named mutex, window message | Unix socket in `$XDG_RUNTIME_DIR` (`instance.rs`) |
+| Update | Inno setup / exe swap via PowerShell | tarball: binary renamed over, firmware refreshed |
+
+Worker threads (`hid_thread`, `firmware_thread`, `update_thread`) report through a `sink::Sink`
+callback; on Windows it posts a boxed message to the handler window, on Linux it feeds the main
+loop's channel.
+
+Check the Windows build from Linux: `cargo check --target x86_64-pc-windows-gnu` (needs a mingw C
+compiler on `PATH` for hidapi and ring).
 
 ## Using it
 
@@ -51,7 +75,7 @@ Dependencies: the `rmk-types` crate from the firmware clone at `../rmk` (path de
 
 ## Files
 
-Settings `%APPDATA%\op36-helper\settings.json`, keymap cache `keymap.bin`, log `log.txt`
+Settings `%APPDATA%\op36-helper\settings.json` (Linux: `~/.config/op36-helper/`), keymap cache `keymap.bin`, log `log.txt`
 (rotated at 1 MB to `log.1.txt`), icons materialised next to them for the tray.
 
 ## Troubleshooting

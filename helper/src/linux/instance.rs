@@ -26,10 +26,17 @@ pub fn claim() -> bool {
             let _ = LISTENER.set(Mutex::new(Some(l)));
             true
         }
+        // Another process won the race between our connect and bind.
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => false,
         Err(e) => {
-            log::warn!("control socket {}: {e}", path.display());
-            // Another process won the race between our connect and bind.
-            false
+            // No usable runtime dir (or a path too long for a socket): run anyway, just without
+            // single-instance and `--toggle`.
+            log::warn!(
+                "control socket {}: {e}; running without single-instance",
+                path.display()
+            );
+            let _ = LISTENER.set(Mutex::new(None));
+            true
         }
     }
 }
