@@ -9,7 +9,7 @@ use crate::model::HidEvent;
 use crate::vial::layer_client::{LayerClient, LayerPacket};
 use crate::vial::protocol::{parse_battery_halves, req_battery_halves};
 use crate::vial::reader::{read_keymap, request_collect};
-use crate::vial::transport::{HidTransport, VialTransport};
+use crate::vial::transport::{HidTransport, OpenOutcome, VialTransport};
 use crate::sink::Sink;
 
 const MATRIX_ROWS: u8 = 6;
@@ -71,14 +71,28 @@ fn run(ui: UiWindow, rx: Receiver<HidCmd>) {
     let mut api = api;
     loop {
         // ---- disconnected: look for the keyboard every 2 s ----
+        let mut denied = false;
         let mut transport = loop {
             match rx.try_recv() {
                 Ok(HidCmd::Quit) | Err(TryRecvError::Disconnected) => return,
                 _ => {}
             }
             let _ = api.refresh_devices();
-            if let Some(t) = HidTransport::open(&api) {
-                break t;
+            match HidTransport::open_outcome(&api) {
+                OpenOutcome::Opened(t) => break t,
+                OpenOutcome::Denied(path) => {
+                    if !denied {
+                        log::warn!("keyboard found at {path}, but access is denied");
+                        post(&ui, HidEvent::AccessDenied(true));
+                        denied = true;
+                    }
+                }
+                OpenOutcome::NotFound => {
+                    if denied {
+                        post(&ui, HidEvent::AccessDenied(false));
+                        denied = false;
+                    }
+                }
             }
             std::thread::sleep(RECONNECT_EVERY);
         };

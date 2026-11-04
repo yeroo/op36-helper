@@ -23,6 +23,8 @@ pub struct Frame {
     pub keys: Vec<KeyDraw>,
     pub recipes: Vec<Recipe>,
     pub connected: bool,
+    /// Not connected because the OS refuses access (the halves say `no access`, not `off`).
+    pub access_denied: bool,
     /// Battery percentages drawn on the halves (iPhone-style pictograms), when known.
     pub battery_left: Option<u8>,
     pub battery_right: Option<u8>,

@@ -69,7 +69,17 @@ pub enum HidEvent {
     /// One half's firmware build id as the keyboard reports it (empty = not known yet).
     Firmware(crate::vial::protocol::Side, String),
     Error(String),
+    /// The keyboard's Vial interface exists but cannot be opened (Linux: no udev rule) — `true`
+    /// while that lasts, `false` once it is gone or opened.
+    AccessDenied(bool),
 }
+
+/// What to do when the keyboard is there but cannot be opened.
+pub const ACCESS_DENIED_HELP: &str = if cfg!(target_os = "linux") {
+    "OP36 found, but access is denied: install the udev rule (linux/70-op36.rules), e.g. ./install.sh --udev"
+} else {
+    "OP36 found, but it could not be opened (another program holding it?)"
+};
 
 /// How long a swap may take before the overlay falls back to the plain offline state.
 pub const SWITCHING_TIMEOUT_MS: u64 = 15_000;
@@ -104,6 +114,8 @@ pub struct Model {
     switching: Option<(u64, crate::vial::protocol::Side)>,
     /// Firmware build ids `[left, right]` as reported after the last connect.
     pub firmware: [Option<String>; 2],
+    /// The keyboard is there but the OS refuses to open it.
+    pub access_denied: bool,
     pending_cache_write: Option<Vec<u8>>,
 }
 
@@ -133,6 +145,7 @@ impl Model {
             central_is_right: false,
             switching: None,
             firmware: [None, None],
+            access_denied: false,
             pending_cache_write: None,
         }
     }
@@ -152,6 +165,7 @@ impl Model {
         match event {
             ModelEvent::Hid(HidEvent::Connected(t)) => {
                 self.connected = true;
+                self.access_denied = false;
                 self.transport = Some(t);
                 self.last_error = None;
                 let announced = self.is_switching(now_ms);
@@ -186,6 +200,14 @@ impl Model {
             }
             ModelEvent::Hid(HidEvent::LayerNotifySupported(s)) => self.layer_notify = Some(s),
             ModelEvent::Hid(HidEvent::Error(e)) => self.last_error = Some(e),
+            ModelEvent::Hid(HidEvent::AccessDenied(denied)) => {
+                self.access_denied = denied;
+                if denied {
+                    self.last_error = Some(ACCESS_DENIED_HELP.to_string());
+                } else if self.last_error.as_deref() == Some(ACCESS_DENIED_HELP) {
+                    self.last_error = None;
+                }
+            }
             ModelEvent::Mods(m) => self.mods = m,
             ModelEvent::Language(hkl) => self.hkl = hkl,
             ModelEvent::Key(press) => {
@@ -249,6 +271,8 @@ impl Model {
         );
         if self.is_switching(now_ms) {
             s.push_str(" · switching master…");
+        } else if !self.connected && self.access_denied {
+            s.push_str(" · no access");
         } else if !self.connected {
             s.push_str(" · offline");
         } else {
@@ -359,6 +383,7 @@ impl Model {
             keys,
             recipes,
             connected: self.connected,
+            access_denied: !self.connected && self.access_denied,
             battery_left: battery.and_then(|b| b.left),
             battery_right: battery.and_then(|b| b.right),
             battery_left_charging: battery.is_some_and(|b| b.left_charging),

@@ -151,6 +151,8 @@ struct App {
     update_line: String,
     key_access: keys::Access,
     monitors: Vec<MonitorInfo>,
+    /// Notifications already shown this run.
+    notified: std::collections::HashSet<&'static str>,
     quit: bool,
 }
 
@@ -301,6 +303,18 @@ impl App {
     }
 
     fn on_model_event(&mut self, event: ModelEvent) {
+        if let ModelEvent::Hid(model::HidEvent::AccessDenied(true)) = &event {
+            self.model.access_denied = true;
+            let action = self.auto_hide.on_connected();
+            self.apply_auto_hide(action);
+            self.notify_once(
+                "hid",
+                "OP36 Helper can't open the keyboard",
+                "No permission for its HID device, so no layer, battery or link state. Fix: \
+                 sudo cp linux/70-op36.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger \
+                 (or ./install.sh --udev from the release tarball).",
+            );
+        }
         // Offline grace: a Bluetooth link that re-negotiates comes back within seconds; keep the
         // last state and only flag offline when the link stays down.
         match &event {
@@ -362,6 +376,38 @@ impl App {
         self.apply_display_mode();
         self.redraw(false);
         self.push_options_state();
+        log::debug!(
+            "model: connected={} layer={} notify={:?} battery={:?} transport={:?} source={:?}",
+            self.model.connected,
+            self.model.layer.active,
+            self.model.layer_notify,
+            self.model.battery,
+            self.model.transport,
+            self.model.keymap_source
+        );
+    }
+
+    /// One desktop notification per `key` per run.
+    fn notify_once(&mut self, key: &'static str, title: &str, body: &str) {
+        if !self.notified.insert(key) {
+            return;
+        }
+        log::warn!("{title}: {body}");
+        if let Some(tray) = self.tray.as_mut() {
+            tray.balloon(title, body);
+        }
+    }
+
+    fn notify_key_access(&mut self) {
+        if self.key_access == keys::Access::Denied && self.settings.find_key {
+            self.notify_once(
+                "keys",
+                "OP36 Helper can't read key presses",
+                "Find-a-key, Shift/Ctrl/Alt variants and the hotkeys need /dev/input access. Fix: \
+                 sudo cp linux/71-op36-keyboards.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger \
+                 (any program you run can then read keystrokes).",
+            );
+        }
     }
 
     fn refresh_tooltip(&mut self) {
@@ -455,7 +501,8 @@ impl App {
     }
 
     fn keyboard_off_action(&mut self) -> Option<auto_hide::Action> {
-        if self.settings.hide_when_offline {
+        // Present but refused: not "off", and hiding would only hide the explanation.
+        if self.settings.hide_when_offline && !self.model.access_denied {
             self.auto_hide.on_disconnected()
         } else {
             None
@@ -557,8 +604,11 @@ impl App {
             match (self.model.connected, self.model.transport) {
                 (true, Some(t)) => format!("connected ({})", t.label()),
                 (true, None) => "connected".to_string(),
-                _ => "not found (USB: check the udev rule; Bluetooth: paired and connected?)"
-                    .to_string(),
+                _ if self.model.access_denied => {
+                    "found, but access denied: install linux/70-op36.rules (./install.sh --udev)"
+                        .to_string()
+                }
+                _ => "not found (USB cable in, or Bluetooth paired and connected?)".to_string(),
             },
             self.model.firmware_line(),
             match self.model.layer_notify {
@@ -779,6 +829,7 @@ impl App {
             AppEvent::KeyAccess(a) => {
                 log::info!("key input: {}", a.describe());
                 self.key_access = a;
+                self.notify_key_access();
                 self.push_options_state();
             }
             AppEvent::Language(hkl) => {
@@ -868,6 +919,10 @@ pub fn main() {
                 eprintln!("op36-helper is not running ({e})");
                 std::process::exit(1);
             }
+            if cmd == "--quit" && !instance::wait_gone(Duration::from_secs(10)) {
+                eprintln!("op36-helper did not exit within 10 s");
+                std::process::exit(1);
+            }
             return;
         }
         Some("--help" | "-h") => {
@@ -949,6 +1004,7 @@ pub fn main() {
         update_line: format!("Helper {}", version::VERSION),
         key_access: keys::Access::NoKeyboards,
         monitors: Vec::new(),
+        notified: Default::default(),
         quit: false,
     };
 
@@ -985,6 +1041,7 @@ pub fn main() {
     }
     app.key_access = keys::spawn(events.clone());
     log::info!("key input: {}", app.key_access.describe());
+    app.notify_key_access();
 
     // Started with the keyboard off: same minute, same hide; a connect within it cancels.
     let action = app.keyboard_off_action();
